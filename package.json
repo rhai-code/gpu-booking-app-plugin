@@ -64,6 +64,7 @@
     "exposedModules": {
       "BookingPage": "./components/BookingPage",
       "AdminPage": "./components/AdminPage",
+      "AgentPage": "./components/AgentPage",
       "HelpPage": "./components/HelpPage"
     },
     "dependencies": {

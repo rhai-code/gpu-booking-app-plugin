@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-booking-tool
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-booking-tool
+  labels:
+    app: gpu-booking-tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-booking-tool
+  template:
+    metadata:
+      labels:
+        app: gpu-booking-tool
+    spec:
+      serviceAccountName: gpu-booking-tool
+      containers:
+        - name: mcp-tool
+          image: image-registry.openshift-image-registry.svc:5000/gpu-booking-test/gpu-booking-tool:latest
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          env:
+            - name: BOOKING_API_URL
+              value: "http://gpu-booking-plugin:9443"
+            - name: LOG_LEVEL
+              value: "INFO"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-booking-tool
+  labels:
+    app: gpu-booking-tool
+spec:
+  selector:
+    app: gpu-booking-tool
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP

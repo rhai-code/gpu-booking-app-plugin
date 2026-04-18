@@ -1,0 +1,106 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-booking-agent
+  labels:
+    app: gpu-booking-agent
+    kagenti.io/type: agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-booking-agent
+  labels:
+    app: gpu-booking-agent
+    kagenti.io/type: agent
+    protocol.kagenti.io/a2a: ""
+spec:
+  selector:
+    app: gpu-booking-agent
+  ports:
+    - name: a2a
+      protocol: TCP
+      port: 8080
+      targetPort: 8001
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-booking-agent
+  labels:
+    app: gpu-booking-agent
+    kagenti.io/type: agent
+    kagenti.io/framework: ADK
+    kagenti.io/workload-type: deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-booking-agent
+  template:
+    metadata:
+      labels:
+        app: gpu-booking-agent
+        kagenti.io/type: agent
+        kagenti.io/inject: enabled
+    spec:
+      serviceAccountName: gpu-booking-agent
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gpu-booking-agent
+          # Pin to a versioned tag for reproducible deploys (e.g., :v1.0.0)
+          image: image-registry.openshift-image-registry.svc:5000/gpu-booking-test/gpu-booking-agent:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+              protocol: TCP
+          env:
+            - name: MCP_URL
+              value: "http://gpu-booking-tool:8080/mcp"
+            - name: ADK_MODEL
+              value: "gemini-2.5-flash"
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: GOOGLE_API_KEY
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8001"
+            - name: OTEL_SERVICE_NAME
+              value: "gpu-booking-agent"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.kagenti-system.svc.cluster.local:4317"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            tcpSocket:
+              port: 8001
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent.json
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8001
+            periodSeconds: 30

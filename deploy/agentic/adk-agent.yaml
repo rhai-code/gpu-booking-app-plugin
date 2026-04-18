@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-booking-agent-tls-proxy
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 256; }
+    http {
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+      server {
+        listen 8443 ssl;
+        ssl_certificate /var/serving-cert/tls.crt;
+        ssl_certificate_key /var/serving-cert/tls.key;
+        location / {
+          proxy_pass http://127.0.0.1:8001;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_read_timeout 120s;
+          proxy_buffering off;
+          chunked_transfer_encoding on;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-booking-agent
+  labels:
+    app: gpu-booking-agent
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: gpu-booking-agent-tls
+spec:
+  selector:
+    app: gpu-booking-agent
+  ports:
+    - name: https
+      port: 8080
+      targetPort: 8443
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-booking-agent
+  labels:
+    app: gpu-booking-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-booking-agent
+  template:
+    metadata:
+      labels:
+        app: gpu-booking-agent
+    spec:
+      containers:
+        - name: adk-agent
+          image: image-registry.openshift-image-registry.svc:5000/gpu-booking-test/gpu-booking-agent:latest
+          ports:
+            - containerPort: 8001
+              protocol: TCP
+          env:
+            - name: MCP_URL
+              value: "http://gpu-booking-tool:8080/mcp"
+            - name: ADK_MODEL
+              value: "gemini-2.5-flash"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-key
+                  key: GOOGLE_API_KEY
+                  optional: true
+            - name: OPENAI_API_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-key
+                  key: OPENAI_API_BASE
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-key
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8001"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+        - name: tls-proxy
+          image: registry.access.redhat.com/ubi9/nginx-124:latest
+          command: ["nginx", "-g", "daemon off;"]
+          ports:
+            - containerPort: 8443
+              protocol: TCP
+          volumeMounts:
+            - name: tls-cert
+              mountPath: /var/serving-cert
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: tls-cert
+          secret:
+            secretName: gpu-booking-agent-tls
+        - name: nginx-conf
+          configMap:
+            name: gpu-booking-agent-tls-proxy

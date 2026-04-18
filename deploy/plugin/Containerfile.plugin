@@ -1,0 +1,15 @@
+FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS builder
+USER 0
+WORKDIR /app
+COPY package.json yarn.lock* ./
+RUN npm install -g yarn && yarn install --frozen-lockfile || yarn install
+COPY tsconfig.json webpack.config.ts console-extensions.json ./
+COPY src/ src/
+RUN NODE_ENV=production yarn build
+
+FROM registry.access.redhat.com/ubi9/nginx-124:latest
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY deploy/plugin/nginx.conf /etc/nginx/nginx.conf
+USER 1001
+EXPOSE 9001
+CMD ["nginx", "-g", "daemon off;"]

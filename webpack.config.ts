@@ -89,6 +89,10 @@ const config: Configuration = {
         target: 'http://localhost:9443',
         changeOrigin: true,
       },
+      '/agent': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
     },
   },
   plugins: [new ConsoleRemotePlugin()],

@@ -1,0 +1,22 @@
+[project]
+name = "gpu-booking-agent"
+version = "0.1.0"
+description = "Google ADK-based GPU booking agent with A2A support for Kagenti deployment"
+authors = [{ name = "Kagenti Contributors" }]
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk[a2a]>=1.0.0",
+    "litellm>=1.75.5",
+    "uvicorn>=0.34.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+]
+
+[project.scripts]
+server = "gpu_booking_agent.agent:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

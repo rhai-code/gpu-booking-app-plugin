@@ -1,0 +1,102 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-booking-tool
+  labels:
+    app: gpu-booking-tool
+    kagenti.io/type: tool
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-booking-tool
+  labels:
+    app: gpu-booking-tool
+    kagenti.io/type: tool
+    kagenti.io/transport: streamable_http
+    protocol.kagenti.io/mcp: ""
+spec:
+  selector:
+    app: gpu-booking-tool
+  ports:
+    - name: mcp
+      protocol: TCP
+      port: 8080
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-booking-tool
+  labels:
+    app: gpu-booking-tool
+    kagenti.io/type: tool
+    kagenti.io/framework: FastMCP
+    kagenti.io/workload-type: deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-booking-tool
+  template:
+    metadata:
+      labels:
+        app: gpu-booking-tool
+        kagenti.io/type: tool
+        kagenti.io/inject: enabled
+    spec:
+      serviceAccountName: gpu-booking-tool
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gpu-booking-tool
+          # Pin to a versioned tag for reproducible deploys (e.g., :v1.0.0)
+          image: image-registry.openshift-image-registry.svc:5000/gpu-booking-test/gpu-booking-tool:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          env:
+            - name: BOOKING_API_URL
+              value: "http://gpu-booking-server:8080"
+            - name: DEFAULT_USER
+              value: "agent-user"
+            - name: MCP_TRANSPORT
+              value: "streamable-http"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8000"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: OTEL_SERVICE_NAME
+              value: "gpu-booking-tool"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.kagenti-system.svc.cluster.local:4317"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30

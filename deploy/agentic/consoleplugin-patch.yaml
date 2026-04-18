@@ -1,0 +1,18 @@
+# Patch the ConsolePlugin CR to add the agent proxy alias.
+# Apply after the plugin is deployed:
+#   oc patch consoleplugin gpu-booking-plugin --type=merge --patch-file=consoleplugin-patch.yaml
+#
+# This allows the browser to reach the ADK agent via the Console proxy path:
+#   /api/proxy/plugin/gpu-booking-plugin/agent/
+
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: gpu-booking-plugin
+spec:
+  proxy:
+    - alias: agent
+      endpoint:
+        service:
+          name: gpu-booking-agent
+          port: 8080

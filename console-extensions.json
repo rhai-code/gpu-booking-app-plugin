@@ -45,6 +45,24 @@
   {
     "type": "console.page/route",
     "properties": {
+      "exact": true,
+      "path": "/gpu-booking/assistant",
+      "component": { "$codeRef": "AgentPage" }
+    }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "gpu-assistant",
+      "name": "GPU Booking Agent",
+      "href": "/gpu-booking/assistant",
+      "perspective": "admin",
+      "section": "gpu-booking"
+    }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
       "path": "/gpu-booking/help/:topic?",
       "component": { "$codeRef": "HelpPage" }
     }
