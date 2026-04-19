@@ -60,11 +60,14 @@ class HTTPProvider:
         """Close the underlying HTTP client. Call on shutdown."""
         await self.client.aclose()
 
-    def _headers(self, user: str) -> dict[str, str]:
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+    def _headers(self, user: str | None = None) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "X-Internal-Request": "true",
+        }
         if self._bearer_token:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
-        else:
+        if user:
             headers["X-Forwarded-User"] = user
         return headers
 
@@ -79,7 +82,7 @@ class HTTPProvider:
         expected_errors: tuple[int, ...] = (),
     ) -> dict[str, Any]:
         """Unified request method with structured error handling."""
-        headers = self._headers(user) if user else {}
+        headers = self._headers(user)
         try:
             resp = await self.client.request(
                 method, path, headers=headers, json=json, params=params

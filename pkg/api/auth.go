@@ -65,9 +65,20 @@ func GetUser(r *http.Request) *UserInfo {
 func AuthMiddleware(next http.Handler) http.Handler {
 	initAuthClient()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health endpoint
-		if strings.HasSuffix(r.URL.Path, "/health") {
+		// Skip auth for health endpoints
+		if strings.HasSuffix(r.URL.Path, "/health") || r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Internal pod-to-pod requests (e.g. agent/MCP tool -> backend) bypass token auth
+		if r.Header.Get("X-Internal-Request") == "true" {
+			username := r.Header.Get("X-Forwarded-User")
+			if username == "" {
+				username = "internal"
+			}
+			ctx := context.WithValue(r.Context(), userContextKey, &UserInfo{Username: username, IsAdmin: false})
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
@@ -110,6 +121,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			Spec: authenticationv1.TokenReviewSpec{Token: token},
 		}, metav1.CreateOptions{})
 		if err != nil || !tr.Status.Authenticated {
+			log.Printf("TokenReview failed for token (first 20 chars): %s... err=%v authenticated=%v",
+				token[:min(20, len(token))], err, tr != nil && tr.Status.Authenticated)
 			HttpError(w, http.StatusUnauthorized, "invalid token")
 			return
 		}

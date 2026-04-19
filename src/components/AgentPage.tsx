@@ -11,10 +11,15 @@ import {
   ToolbarContent,
   ToolbarItem,
   Label,
+  MenuToggle,
+  Select,
+  SelectList,
+  SelectOption,
 } from '@patternfly/react-core';
-import { EraserIcon } from '@patternfly/react-icons';
+import { EraserIcon, CogIcon } from '@patternfly/react-icons';
 import { useAuth } from '../utils/AuthContext';
 import { fetchAgentCard, streamMessage } from '../utils/a2a-client';
+import { getLLMEndpoints, LLMEndpoint } from '../utils/api';
 import {
   A2AAgentCard,
   A2AEvent,
@@ -27,6 +32,7 @@ import {
 } from '../utils/a2a-types';
 import ChatPanel from './agent/ChatPanel';
 import EventPanel from './agent/EventPanel';
+import EndpointSettings from './agent/EndpointSettings';
 import './styles.css';
 
 function generateId(): string {
@@ -95,6 +101,23 @@ const AgentPage: React.FC = () => {
   const contextIdRef = React.useRef<string | undefined>(undefined);
   const taskIdRef = React.useRef<string | undefined>(undefined);
 
+  const [endpoints, setEndpoints] = React.useState<LLMEndpoint[]>([]);
+  const [selectedEndpointId, setSelectedEndpointId] = React.useState<number | undefined>(undefined);
+  const [endpointSelectOpen, setEndpointSelectOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+
+  const fetchEndpoints = React.useCallback(() => {
+    getLLMEndpoints()
+      .then((resp) => {
+        const list = (resp.endpoints || []).filter((e) => e.enabled);
+        setEndpoints(list);
+        if (list.length > 0 && !selectedEndpointId) {
+          setSelectedEndpointId(list[0].id);
+        }
+      })
+      .catch(() => { /* endpoints are optional */ });
+  }, [selectedEndpointId]);
+
   React.useEffect(() => {
     fetchAgentCard()
       .then((card) => {
@@ -103,6 +126,7 @@ const AgentPage: React.FC = () => {
       })
       .catch(() => setError('Could not connect to AI agent'))
       .finally(() => setLoading(false));
+    fetchEndpoints();
   }, []);
 
   const handleClear = React.useCallback(() => {
@@ -127,6 +151,8 @@ const AgentPage: React.FC = () => {
 
       const agentMsgId = generateId();
       let agentText = '';
+
+      const metadata = selectedEndpointId ? { endpointId: selectedEndpointId } : undefined;
 
       streamMessage(
         text,
@@ -186,9 +212,10 @@ const AgentPage: React.FC = () => {
         },
         contextIdRef.current,
         taskIdRef.current,
+        metadata,
       );
     },
-    [],
+    [selectedEndpointId],
   );
 
   if (loading) {
@@ -222,6 +249,45 @@ const AgentPage: React.FC = () => {
             </div>
             <Toolbar>
               <ToolbarContent>
+                {endpoints.length > 0 && (
+                  <ToolbarItem>
+                    <Select
+                      isOpen={endpointSelectOpen}
+                      onOpenChange={setEndpointSelectOpen}
+                      onSelect={(_e, value) => {
+                        setSelectedEndpointId(value as number);
+                        setEndpointSelectOpen(false);
+                      }}
+                      selected={selectedEndpointId}
+                      toggle={(toggleRef) => (
+                        <MenuToggle
+                          ref={toggleRef}
+                          onClick={() => setEndpointSelectOpen(!endpointSelectOpen)}
+                          isExpanded={endpointSelectOpen}
+                          style={{ minWidth: '180px' }}
+                        >
+                          {endpoints.find((e) => e.id === selectedEndpointId)?.name || 'Select model'}
+                        </MenuToggle>
+                      )}
+                    >
+                      <SelectList>
+                        {endpoints.map((ep) => (
+                          <SelectOption key={ep.id} value={ep.id}>
+                            {ep.name} ({ep.model_name})
+                          </SelectOption>
+                        ))}
+                      </SelectList>
+                    </Select>
+                  </ToolbarItem>
+                )}
+                <ToolbarItem>
+                  <Button
+                    variant="plain"
+                    onClick={() => setSettingsOpen(true)}
+                    icon={<CogIcon />}
+                    aria-label="LLM Settings"
+                  />
+                </ToolbarItem>
                 <ToolbarItem>
                   <Button
                     variant="secondary"
@@ -252,6 +318,12 @@ const AgentPage: React.FC = () => {
             <EventPanel events={events} />
           </div>
         </PageSection>
+
+        <EndpointSettings
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onEndpointsChanged={fetchEndpoints}
+        />
       </>
     </>
   );

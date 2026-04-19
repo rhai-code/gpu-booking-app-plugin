@@ -141,3 +141,41 @@ export async function adminImportDatabase(file: File): Promise<{ status: string 
 // Health
 export const getHealth = () =>
   request<{ status: string; namespace: string }>('/health');
+
+// LLM Endpoints
+export interface LLMEndpoint {
+  id: number;
+  name: string;
+  url: string;
+  api_key: string;
+  model_name: string;
+  provider_type: string;
+  owner: string;
+  is_global: boolean;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface LLMEndpointRequest {
+  name: string;
+  url: string;
+  api_key: string;
+  model_name: string;
+  provider_type: string;
+  is_global: boolean;
+}
+
+export const getLLMEndpoints = () =>
+  request<{ endpoints: LLMEndpoint[] }>('/llm-endpoints');
+
+export const createLLMEndpoint = (data: LLMEndpointRequest) =>
+  request<LLMEndpoint>('/llm-endpoints', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateLLMEndpoint = (id: number, data: LLMEndpointRequest & { enabled: boolean }) =>
+  request<{ status: string }>(`/llm-endpoints?id=${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteLLMEndpoint = (id: number) =>
+  request<{ status: string }>(`/llm-endpoints?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const testLLMEndpoint = (id: number) =>
+  request<{ status: string; message?: string; http_status?: number }>(`/llm-endpoints/test?id=${id}`);

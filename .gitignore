@@ -4,3 +4,5 @@ dist/
 backend
 .env
 .playwright-cli/
+__pycache__/
+*.pyc

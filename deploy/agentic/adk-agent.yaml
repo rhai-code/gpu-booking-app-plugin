@@ -73,25 +73,17 @@ spec:
               value: "http://gpu-booking-tool:8080/mcp"
             - name: ADK_MODEL
               value: "gemini-2.5-flash"
+            - name: BACKEND_URL
+              value: "http://gpu-booking-server:9080"
             - name: LOG_LEVEL
               value: "INFO"
+            - name: ADK_SUPPRESS_GEMINI_LITELLM_WARNINGS
+              value: "true"
             - name: GOOGLE_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: llm-api-key
                   key: GOOGLE_API_KEY
-                  optional: true
-            - name: OPENAI_API_BASE
-              valueFrom:
-                secretKeyRef:
-                  name: llm-api-key
-                  key: OPENAI_API_BASE
-                  optional: true
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: llm-api-key
-                  key: OPENAI_API_KEY
                   optional: true
             - name: HOST
               value: "0.0.0.0"

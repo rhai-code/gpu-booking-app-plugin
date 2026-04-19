@@ -131,6 +131,24 @@ func OpenDB(dbPath string) error {
 	db.Exec("ALTER TABLE bookings ADD COLUMN start_hour INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE bookings ADD COLUMN end_hour INTEGER NOT NULL DEFAULT 24")
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS llm_endpoints (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			url TEXT NOT NULL DEFAULT '',
+			api_key TEXT NOT NULL DEFAULT '',
+			model_name TEXT NOT NULL DEFAULT '',
+			provider_type TEXT NOT NULL DEFAULT 'openai-compatible',
+			owner TEXT NOT NULL,
+			is_global INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("creating llm_endpoints table: %w", err)
+	}
+
 	return nil
 }
 
@@ -156,3 +174,27 @@ func ScanBooking(rows *sql.Rows) (Booking, error) {
 }
 
 const BookingColumns = "id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour"
+
+type LLMEndpoint struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	APIKey       string `json:"api_key,omitempty"`
+	ModelName    string `json:"model_name"`
+	ProviderType string `json:"provider_type"`
+	Owner        string `json:"owner"`
+	IsGlobal     bool   `json:"is_global"`
+	Enabled      bool   `json:"enabled"`
+	CreatedAt    string `json:"created_at"`
+}
+
+const LLMEndpointColumns = "id, name, url, api_key, model_name, provider_type, owner, is_global, enabled, created_at"
+
+func ScanLLMEndpoint(rows *sql.Rows) (LLMEndpoint, error) {
+	var e LLMEndpoint
+	var isGlobal, enabled int
+	err := rows.Scan(&e.ID, &e.Name, &e.URL, &e.APIKey, &e.ModelName, &e.ProviderType, &e.Owner, &isGlobal, &enabled, &e.CreatedAt)
+	e.IsGlobal = isGlobal == 1
+	e.Enabled = enabled == 1
+	return e, err
+}

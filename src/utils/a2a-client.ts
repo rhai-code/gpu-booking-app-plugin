@@ -34,6 +34,7 @@ export async function sendMessage(
   text: string,
   contextId?: string,
   taskId?: string,
+  metadata?: Record<string, unknown>,
 ): Promise<A2AEvent | null> {
   const body = {
     jsonrpc: '2.0',
@@ -46,6 +47,7 @@ export async function sendMessage(
         messageId: generateId(),
         ...(contextId && { contextId }),
         ...(taskId && { taskId }),
+        ...(metadata && { metadata }),
       },
       ...(contextId && { configuration: { blocking: true } }),
     },
@@ -144,6 +146,7 @@ export async function streamMessage(
   onError: (err: string) => void,
   contextId?: string,
   taskId?: string,
+  metadata?: Record<string, unknown>,
 ): Promise<void> {
   const messageId = generateId();
   const body = {
@@ -157,6 +160,7 @@ export async function streamMessage(
         messageId,
         ...(contextId && { contextId }),
         ...(taskId && { taskId }),
+        ...(metadata && { metadata }),
       },
     },
   };
