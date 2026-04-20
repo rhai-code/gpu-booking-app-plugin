@@ -11,18 +11,25 @@ it from RunConfig.custom_metadata, fetches the endpoint config from the Go
 backend, and overrides llm_request.model so LiteLLM routes to the correct
 provider.
 
+Security: real OpenShift OAuth tokens are threaded end-to-end from the Console
+proxy through the ADK agent, into MCP tool calls, and on to the Go backend.
+Each hop validates via TokenReview. See _auth_token_var, AuthTokenMiddleware,
+and _auth_header_provider.
+
 Architecture:
   root_agent (BookingAssistant)
     ├── availability_agent (read-only queries)
     └── reservation_agent (mutating operations)
 """
 
+import contextvars
 import logging
 import os
 from typing import Optional
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
@@ -40,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 MCP_URL = os.getenv("MCP_URL", "http://localhost:8000/mcp")
 
+# Per-request storage for the user's OpenShift OAuth token.
+# Set by AuthTokenMiddleware, read by _auth_header_provider.
+_auth_token_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_auth_token_var", default=""
+)
+
 
 def _dynamic_model_callback(
     callback_context: CallbackContext, llm_request: LlmRequest
@@ -50,6 +63,9 @@ def _dynamic_model_callback(
     under the key 'a2a_metadata'. This callback reads endpointId from there,
     fetches the endpoint config from the Go backend, and overrides
     llm_request.model so LiteLLM routes to the correct provider.
+
+    The user's OAuth token (from _auth_token_var) is forwarded to the
+    backend so TokenReview validates the real user.
     """
     metadata = None
     try:
@@ -59,7 +75,8 @@ def _dynamic_model_callback(
     except (AttributeError, KeyError):
         pass
 
-    model = get_model_for_request(metadata)
+    user_token = _auth_token_var.get("") or None
+    model = get_model_for_request(metadata, user_token=user_token)
     if model != DEFAULT_MODEL:
         llm_request.model = model
         logger.info("Dynamic model switch: using %s for this LLM call", model)
@@ -150,6 +167,18 @@ def _make_litellm_model(model_name: str) -> LiteLlm:
     return LiteLlm(model=litellm_model)
 
 
+def _auth_header_provider(context: ReadonlyContext) -> dict[str, str]:
+    """Provide the user's OAuth token as an Authorization header to MCP.
+
+    Reads the token stored in _auth_token_var (set by AuthTokenMiddleware)
+    and returns it so McpToolset sends it on every MCP HTTP request.
+    """
+    token = _auth_token_var.get("")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+
 def build_agents(model_name: str):
     """Build agent hierarchy using LiteLLM as the model connector."""
     model = _make_litellm_model(model_name)
@@ -157,11 +186,13 @@ def build_agents(model_name: str):
     availability_toolset = McpToolset(
         connection_params=StreamableHTTPConnectionParams(url=MCP_URL),
         tool_filter=["get_config", "list_bookings", "check_availability"],
+        header_provider=_auth_header_provider,
     )
 
     reservation_toolset = McpToolset(
         connection_params=StreamableHTTPConnectionParams(url=MCP_URL),
         tool_filter=["create_booking", "bulk_book", "cancel_booking", "check_availability"],
+        header_provider=_auth_header_provider,
     )
 
     availability_agent = LlmAgent(
@@ -207,9 +238,17 @@ root_agent = build_agents(DEFAULT_MODEL)
 
 
 def main():
-    """Entry point: expose the agent as an A2A server via uvicorn."""
+    """Entry point: expose the agent as an A2A server via uvicorn.
+
+    Wraps the standard to_a2a() Starlette app with middleware that extracts
+    the user's OpenShift OAuth token from the Authorization header and
+    stores it in _auth_token_var so downstream McpToolset calls can forward it.
+    """
     import uvicorn
     from google.adk.a2a.utils.agent_to_a2a import to_a2a
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import Response
 
     setup_otel()
 
@@ -222,6 +261,23 @@ def main():
     )
 
     a2a_app = to_a2a(root_agent, port=port)
+
+    class AuthTokenMiddleware(BaseHTTPMiddleware):
+        """Extract Bearer token from incoming request and store for downstream use."""
+
+        async def dispatch(self, request: Request, call_next) -> Response:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.lower().startswith("bearer "):
+                token = auth_header[len("bearer "):].strip()
+                tok = _auth_token_var.set(token)
+                try:
+                    return await call_next(request)
+                finally:
+                    _auth_token_var.reset(tok)
+            return await call_next(request)
+
+    a2a_app.add_middleware(AuthTokenMiddleware)
+
     uvicorn.run(a2a_app, host=host, port=port)
 
 

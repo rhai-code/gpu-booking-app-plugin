@@ -3,6 +3,10 @@ GPU Booking MCP Tool Server
 
 FastMCP server that wraps the Go booking backend API, exposing GPU resource
 booking operations as MCP tools for AI agents.
+
+Security: extracts the user's real OpenShift OAuth token from the incoming
+MCP HTTP request (forwarded by the ADK agent's header_provider) and passes
+it through to the Go backend so TokenReview validates the real user.
 """
 
 import json
@@ -10,6 +14,7 @@ import logging
 import os
 
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
 from pydantic import ValidationError
 
 from starlette.responses import JSONResponse
@@ -28,6 +33,23 @@ DEFAULT_USER = os.getenv("DEFAULT_USER", "agent-user")
 
 provider: HTTPProvider | None = None
 mcp = FastMCP("GPU Booking Tool")
+
+
+def _get_user_token() -> str | None:
+    """Extract the Bearer token from the current MCP HTTP request.
+
+    The ADK agent's McpToolset header_provider forwards the user's real
+    OpenShift OAuth token on every MCP call. We read it here and pass it
+    through to the Go backend for TokenReview validation.
+    """
+    try:
+        request = get_http_request()
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            return auth[len("bearer "):].strip()
+    except RuntimeError:
+        pass
+    return None
 
 
 def _init_provider():
@@ -54,7 +76,8 @@ async def get_config() -> str:
     Use this tool first to understand what resources are available before
     checking availability or making bookings.
     """
-    result = await provider.get_config()
+    token = _get_user_token()
+    result = await provider.get_config(user_token=token)
     if "error" in result:
         return json.dumps(result, indent=2)
     try:
@@ -78,7 +101,8 @@ async def list_bookings(user: str = DEFAULT_USER) -> str:
     Args:
         user: The username to authenticate as (maps to X-Forwarded-User header).
     """
-    result = await provider.list_bookings(user)
+    token = _get_user_token()
+    result = await provider.list_bookings(user, user_token=token)
     if "error" in result:
         return json.dumps(result, indent=2)
     try:
@@ -109,11 +133,12 @@ async def check_availability(
         date: The date to check availability for, in YYYY-MM-DD format (UTC).
         user: The username to authenticate as.
     """
-    config = await provider.get_config()
+    token = _get_user_token()
+    config = await provider.get_config(user_token=token)
     if "error" in config:
         return json.dumps({"error": "Failed to fetch config", "detail": config})
 
-    bookings_data = await provider.list_bookings(user)
+    bookings_data = await provider.list_bookings(user, user_token=token)
     if "error" in bookings_data:
         return json.dumps({"error": "Failed to fetch bookings", "detail": bookings_data})
 
@@ -193,6 +218,7 @@ async def create_booking(
         start_hour: Start hour in UTC (0-23). Default 0 for full day.
         end_hour: End hour in UTC (1-24). Default 24 for full day.
     """
+    token = _get_user_token()
     result = await provider.create_booking(
         user=user,
         resource=resource,
@@ -201,6 +227,7 @@ async def create_booking(
         description=description,
         start_hour=start_hour,
         end_hour=end_hour,
+        user_token=token,
     )
     return json.dumps(result, indent=2)
 
@@ -231,6 +258,7 @@ async def bulk_book(
         start_hour: Start hour in UTC (0-23). Default 0 for full day.
         end_hour: End hour in UTC (1-24). Default 24 for full day.
     """
+    token = _get_user_token()
     result = await provider.bulk_book(
         user=user,
         resources=resources,
@@ -239,6 +267,7 @@ async def bulk_book(
         description=description,
         start_hour=start_hour,
         end_hour=end_hour,
+        user_token=token,
     )
     return json.dumps(result, indent=2)
 
@@ -258,7 +287,10 @@ async def cancel_booking(
         booking_id: The unique ID of the booking to cancel.
         user: The username to authenticate as (must match booking owner).
     """
-    result = await provider.cancel_booking(user=user, booking_id=booking_id)
+    token = _get_user_token()
+    result = await provider.cancel_booking(
+        user=user, booking_id=booking_id, user_token=token
+    )
     return json.dumps(result, indent=2)
 
 

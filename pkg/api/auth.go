@@ -62,6 +62,25 @@ func GetUser(r *http.Request) *UserInfo {
 	return &UserInfo{Username: "", IsAdmin: false}
 }
 
+// internalBypassAllowed lists path prefixes where X-Internal-Request is
+// accepted without a real user token.  Only truly unauthenticated reads
+// (config, health) are allowed here.
+var internalBypassPaths = []string{
+	"/api/config",
+	"/api/health",
+	"/healthz",
+	"/api/llm-endpoints",
+}
+
+func isInternalBypassAllowed(path string) bool {
+	for _, prefix := range internalBypassPaths {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func AuthMiddleware(next http.Handler) http.Handler {
 	initAuthClient()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,8 +90,9 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Internal pod-to-pod requests (e.g. agent/MCP tool -> backend) bypass token auth
-		if r.Header.Get("X-Internal-Request") == "true" {
+		// X-Internal-Request bypass is restricted to safe read-only paths.
+		// User-scoped operations (bookings) always require a real Bearer token.
+		if r.Header.Get("X-Internal-Request") == "true" && isInternalBypassAllowed(r.URL.Path) {
 			username := r.Header.Get("X-Forwarded-User")
 			if username == "" {
 				username = "internal"

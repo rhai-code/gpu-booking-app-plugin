@@ -1,4 +1,12 @@
-"""HTTP provider that calls the Go booking backend API with retry logic."""
+"""HTTP provider that calls the Go booking backend API with retry logic.
+
+Supports two auth modes:
+  1. User token forwarding: when a real OpenShift OAuth token is available
+     (threaded from Console -> Agent -> MCP), it is sent as a Bearer token
+     and the Go backend validates via TokenReview.
+  2. Fallback: X-Internal-Request + X-Forwarded-User for health/config
+     endpoints where no user token is available (e.g. startup probes).
+"""
 
 import json
 import logging
@@ -36,19 +44,21 @@ def _read_sa_token() -> str | None:
 class HTTPProvider:
     """Calls the Go booking backend at BOOKING_API_URL with retries.
 
-    Auth modes (checked in order):
-      1. BOOKING_API_TOKEN env var -> Bearer token (explicit)
-      2. ServiceAccount token at SA_TOKEN_PATH -> Bearer token (in-cluster)
-      3. X-Forwarded-User header (standalone gpu-booking-app fallback)
+    Auth is determined per-request:
+      - If a user_token is provided (real OAuth token forwarded from the
+        Console proxy via the ADK agent), it is sent as Authorization: Bearer.
+        The Go backend validates it via TokenReview.
+      - Otherwise, falls back to X-Internal-Request: true (restricted to
+        unauthenticated endpoints like /api/config by the backend).
     """
 
     def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
-        self._bearer_token = os.getenv("BOOKING_API_TOKEN") or _read_sa_token()
-        if self._bearer_token:
-            logger.info("Using Bearer token auth for backend API")
+        self._sa_token = os.getenv("BOOKING_API_TOKEN") or _read_sa_token()
+        if self._sa_token:
+            logger.info("ServiceAccount/static token available for fallback auth")
         else:
-            logger.info("Using X-Forwarded-User header auth for backend API")
+            logger.info("No SA token; user token forwarding is the only auth path")
         transport = httpx.AsyncHTTPTransport(retries=MAX_RETRIES)
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -60,13 +70,16 @@ class HTTPProvider:
         """Close the underlying HTTP client. Call on shutdown."""
         await self.client.aclose()
 
-    def _headers(self, user: str | None = None) -> dict[str, str]:
-        headers: dict[str, str] = {
-            "Content-Type": "application/json",
-            "X-Internal-Request": "true",
-        }
-        if self._bearer_token:
-            headers["Authorization"] = f"Bearer {self._bearer_token}"
+    def _headers(
+        self, user: str | None = None, user_token: str | None = None
+    ) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if user_token:
+            headers["Authorization"] = f"Bearer {user_token}"
+        else:
+            headers["X-Internal-Request"] = "true"
+            if self._sa_token:
+                headers["Authorization"] = f"Bearer {self._sa_token}"
         if user:
             headers["X-Forwarded-User"] = user
         return headers
@@ -77,12 +90,13 @@ class HTTPProvider:
         path: str,
         *,
         user: str | None = None,
+        user_token: str | None = None,
         json: dict | None = None,
         params: dict | None = None,
         expected_errors: tuple[int, ...] = (),
     ) -> dict[str, Any]:
         """Unified request method with structured error handling."""
-        headers = self._headers(user)
+        headers = self._headers(user, user_token=user_token)
         try:
             resp = await self.client.request(
                 method, path, headers=headers, json=json, params=params
@@ -114,11 +128,15 @@ class HTTPProvider:
 
         return _safe_json(resp)
 
-    async def get_config(self) -> dict[str, Any]:
-        return await self._request("GET", "/api/config")
+    async def get_config(self, user_token: str | None = None) -> dict[str, Any]:
+        return await self._request("GET", "/api/config", user_token=user_token)
 
-    async def list_bookings(self, user: str) -> dict[str, Any]:
-        return await self._request("GET", "/api/bookings", user=user)
+    async def list_bookings(
+        self, user: str, user_token: str | None = None
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET", "/api/bookings", user=user, user_token=user_token
+        )
 
     async def create_booking(
         self,
@@ -129,6 +147,7 @@ class HTTPProvider:
         description: str = "",
         start_hour: int = 0,
         end_hour: int = 24,
+        user_token: str | None = None,
     ) -> dict[str, Any]:
         payload = {
             "resource": resource,
@@ -141,7 +160,8 @@ class HTTPProvider:
         }
         return await self._request(
             "POST", "/api/bookings",
-            user=user, json=payload, expected_errors=(409,),
+            user=user, user_token=user_token, json=payload,
+            expected_errors=(409,),
         )
 
     async def bulk_book(
@@ -153,6 +173,7 @@ class HTTPProvider:
         description: str = "",
         start_hour: int = 0,
         end_hour: int = 24,
+        user_token: str | None = None,
     ) -> dict[str, Any]:
         payload = {
             "resources": resources,
@@ -164,11 +185,15 @@ class HTTPProvider:
         }
         return await self._request(
             "POST", "/api/bookings/bulk",
-            user=user, json=payload, expected_errors=(409,),
+            user=user, user_token=user_token, json=payload,
+            expected_errors=(409,),
         )
 
-    async def cancel_booking(self, user: str, booking_id: str) -> dict[str, Any]:
+    async def cancel_booking(
+        self, user: str, booking_id: str, user_token: str | None = None
+    ) -> dict[str, Any]:
         return await self._request(
             "DELETE", "/api/bookings",
-            user=user, params={"id": booking_id}, expected_errors=(403, 404),
+            user=user, user_token=user_token,
+            params={"id": booking_id}, expected_errors=(403, 404),
         )

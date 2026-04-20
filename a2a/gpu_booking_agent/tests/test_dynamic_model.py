@@ -150,7 +150,22 @@ class TestGetModelForRequest:
         }
         result = get_model_for_request({"endpointId": 42})
         assert result == "openai/meta-llama/Llama-3.1-8B"
-        mock_fetch.assert_called_once_with(42)
+        mock_fetch.assert_called_once_with(42, user_token=None)
+
+    @patch("gpu_booking_agent.endpoint_config.fetch_endpoint_config")
+    def test_valid_endpoint_id_with_user_token(self, mock_fetch):
+        from gpu_booking_agent.endpoint_config import get_model_for_request
+
+        mock_fetch.return_value = {
+            "provider_type": "gemini",
+            "model_name": "gemini-2.5-flash",
+            "api_key": "key",
+        }
+        result = get_model_for_request(
+            {"endpointId": 42}, user_token="real-oauth-token"
+        )
+        assert result == "gemini/gemini-2.5-flash"
+        mock_fetch.assert_called_once_with(42, user_token="real-oauth-token")
 
     @patch("gpu_booking_agent.endpoint_config.fetch_endpoint_config")
     def test_fetch_failure_returns_default(self, mock_fetch):
@@ -206,7 +221,27 @@ class TestDynamicModelCallback:
 
         assert result is None
         assert req.model == "openai/meta-llama/Llama-3.1-8B"
-        mock_get_model.assert_called_once_with({"endpointId": 42})
+        mock_get_model.assert_called_once_with(
+            {"endpointId": 42}, user_token=None
+        )
+
+    @patch("gpu_booking_agent.agent.get_model_for_request")
+    def test_with_auth_token_forwards_to_get_model(self, mock_get_model):
+        from gpu_booking_agent.agent import _auth_token_var, _dynamic_model_callback
+
+        mock_get_model.return_value = "openai/gpt-4o"
+        ctx = self._make_callback_context(metadata={"endpointId": 7})
+        req = self._make_llm_request()
+
+        tok = _auth_token_var.set("my-oauth-token")
+        try:
+            _dynamic_model_callback(callback_context=ctx, llm_request=req)
+        finally:
+            _auth_token_var.reset(tok)
+
+        mock_get_model.assert_called_once_with(
+            {"endpointId": 7}, user_token="my-oauth-token"
+        )
 
     @patch("gpu_booking_agent.agent.get_model_for_request")
     def test_default_model_not_overridden(self, mock_get_model):
@@ -254,3 +289,67 @@ class TestMakeLitellmModel:
 
         model = _make_litellm_model("ollama/llama3")
         assert model.model == "ollama/llama3"
+
+
+class TestAuthHeaderProvider:
+    """Tests for agent._auth_header_provider."""
+
+    def test_returns_bearer_when_token_set(self):
+        from gpu_booking_agent.agent import _auth_header_provider, _auth_token_var
+
+        tok = _auth_token_var.set("test-token-123")
+        try:
+            headers = _auth_header_provider(MagicMock())
+            assert headers == {"Authorization": "Bearer test-token-123"}
+        finally:
+            _auth_token_var.reset(tok)
+
+    def test_returns_empty_when_no_token(self):
+        from gpu_booking_agent.agent import _auth_header_provider, _auth_token_var
+
+        tok = _auth_token_var.set("")
+        try:
+            headers = _auth_header_provider(MagicMock())
+            assert headers == {}
+        finally:
+            _auth_token_var.reset(tok)
+
+    def test_returns_empty_when_default(self):
+        from gpu_booking_agent.agent import _auth_header_provider
+
+        headers = _auth_header_provider(MagicMock())
+        assert headers == {}
+
+
+class TestFetchEndpointConfigAuth:
+    """Tests for fetch_endpoint_config with token forwarding."""
+
+    @patch("gpu_booking_agent.endpoint_config.httpx.get")
+    def test_uses_bearer_when_user_token_provided(self, mock_get):
+        from gpu_booking_agent.endpoint_config import fetch_endpoint_config
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"id": 1, "model_name": "test"}
+        mock_get.return_value = mock_resp
+
+        fetch_endpoint_config(1, user_token="oauth-token-xyz")
+
+        call_kwargs = mock_get.call_args
+        assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer oauth-token-xyz"
+        assert "X-Internal-Request" not in call_kwargs.kwargs["headers"]
+
+    @patch("gpu_booking_agent.endpoint_config.httpx.get")
+    def test_uses_internal_request_when_no_token(self, mock_get):
+        from gpu_booking_agent.endpoint_config import fetch_endpoint_config
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"id": 1, "model_name": "test"}
+        mock_get.return_value = mock_resp
+
+        fetch_endpoint_config(1, user_token=None)
+
+        call_kwargs = mock_get.call_args
+        assert call_kwargs.kwargs["headers"]["X-Internal-Request"] == "true"
+        assert "Authorization" not in call_kwargs.kwargs["headers"]

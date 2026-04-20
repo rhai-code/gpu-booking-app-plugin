@@ -109,16 +109,27 @@ def _build_litellm_model(endpoint: dict) -> str:
     return f"openai/{model}" if not model.startswith("openai/") else model
 
 
-def fetch_endpoint_config(endpoint_id: int) -> Optional[dict]:
+def fetch_endpoint_config(
+    endpoint_id: int, user_token: str | None = None
+) -> Optional[dict]:
     """Fetch endpoint configuration from the Go backend.
 
-    Uses X-Internal-Request header to get unmasked API keys.
+    When a user_token is provided (real OpenShift OAuth token), it is sent
+    as a Bearer token and the backend validates via TokenReview.  Falls back
+    to X-Internal-Request for the /api/llm-endpoints path which is on the
+    backend's internal bypass allowlist.
     """
+    headers: dict[str, str] = {}
+    if user_token:
+        headers["Authorization"] = f"Bearer {user_token}"
+    else:
+        headers["X-Internal-Request"] = "true"
+
     try:
         resp = httpx.get(
             f"{BACKEND_URL}/api/llm-endpoints/get",
             params={"id": str(endpoint_id)},
-            headers={"X-Internal-Request": "true"},
+            headers=headers,
             timeout=10.0,
         )
         if resp.status_code != 200:
@@ -132,7 +143,9 @@ def fetch_endpoint_config(endpoint_id: int) -> Optional[dict]:
         return None
 
 
-def get_model_for_request(metadata: Optional[dict] = None) -> str:
+def get_model_for_request(
+    metadata: Optional[dict] = None, user_token: str | None = None
+) -> str:
     """Resolve the LiteLLM model string for a request.
 
     If metadata contains an endpointId, fetch the config and build the
@@ -153,7 +166,7 @@ def get_model_for_request(metadata: Optional[dict] = None) -> str:
         logger.warning("Invalid endpointId in metadata: %s", endpoint_id)
         return DEFAULT_MODEL
 
-    config = fetch_endpoint_config(eid)
+    config = fetch_endpoint_config(eid, user_token=user_token)
     if not config:
         logger.warning("Falling back to default model for endpoint %d", eid)
         return DEFAULT_MODEL
