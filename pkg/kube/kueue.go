@@ -520,25 +520,31 @@ func ListPreemptedWorkloads() ([]PreemptedWorkload, error) {
 	var result []PreemptedWorkload
 	for _, item := range list.Items {
 		for _, cond := range item.Status.Conditions {
-			if cond.Status != "True" {
+			matched := false
+			switch {
+			case cond.Status == "True" && (cond.Type == "Preempted" || (cond.Type == "Evicted" && cond.Reason == "Preempted")):
+				matched = true
+			case cond.Status == "False" && cond.Type == "QuotaReserved" && cond.Reason == "Pending":
+				matched = true
+			}
+			if !matched {
 				continue
 			}
-			if cond.Type == "Preempted" || (cond.Type == "Evicted" && cond.Reason == "Preempted") {
-				owner := item.Metadata.Namespace
-				if user, err := getNamespaceRequester(item.Metadata.Namespace); err == nil && user != "" {
-					owner = user
-				}
 
-				result = append(result, PreemptedWorkload{
-					Name:      item.Metadata.Name,
-					Namespace: item.Metadata.Namespace,
-					Owner:     owner,
-					Reason:    cond.Reason,
-					Message:   cond.Message,
-					Timestamp: cond.LastTransitionTime,
-				})
-				break
+			owner := item.Metadata.Namespace
+			if user, err := getNamespaceRequester(item.Metadata.Namespace); err == nil && user != "" {
+				owner = user
 			}
+
+			result = append(result, PreemptedWorkload{
+				Name:      item.Metadata.Name,
+				Namespace: item.Metadata.Namespace,
+				Owner:     owner,
+				Reason:    cond.Reason,
+				Message:   cond.Message,
+				Timestamp: cond.LastTransitionTime,
+			})
+			break
 		}
 	}
 
