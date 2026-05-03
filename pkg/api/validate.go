@@ -16,12 +16,14 @@ func IsValidBookingID(id string) bool {
 }
 
 // IsValidBookingDate checks that a date string is valid and within the booking window.
-func IsValidBookingDate(dateStr string, windowDays int) bool {
+// The utcOffset (hours from UTC) is used to compute the user's local "today".
+func IsValidBookingDate(dateStr string, windowDays int, utcOffset int) bool {
 	d, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
 		return false
 	}
-	today := time.Now().Truncate(24 * time.Hour)
+	userNow := time.Now().UTC().Add(time.Duration(utcOffset) * time.Hour)
+	today := time.Date(userNow.Year(), userNow.Month(), userNow.Day(), 0, 0, 0, 0, time.UTC)
 	maxDate := today.AddDate(0, 0, windowDays+1)
 	return !d.Before(today) && d.Before(maxDate)
 }

@@ -193,8 +193,8 @@ func TestCreateBookingEvictsConsumed(t *testing.T) {
 
 	// Insert a consumed booking directly
 	_, err := db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"consumed-1", "kueue-user", "", "nvidia.com/gpu", 0, date, "full", "now", database.SourceConsumed, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"consumed-1", "kueue-user", "", "nvidia.com/gpu", 0, date, "full", "now", database.SourceConsumed, "", 0, 24, 0,
 	)
 	if err != nil {
 		t.Fatalf("insert consumed: %v", err)
@@ -237,10 +237,10 @@ func TestGetBookings(t *testing.T) {
 	setupTestDB(t)
 	db := database.DB()
 
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
 	_, err := db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "desc", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "desc", 0, 24, 0,
 	)
 	if err != nil {
 		t.Fatalf("insert: %v", err)
@@ -303,8 +303,8 @@ func TestDeleteBooking(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 	)
 
 	req := httptest.NewRequest(http.MethodDelete, "/bookings?id=booking-1", nil)
@@ -352,8 +352,8 @@ func TestDeleteBookingForbiddenOtherUser(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "alice", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "alice", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 	)
 
 	req := httptest.NewRequest(http.MethodDelete, "/bookings?id=booking-1", nil)
@@ -373,8 +373,8 @@ func TestDeleteBookingAdminCanDeleteOthers(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "alice", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "alice", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 	)
 
 	req := httptest.NewRequest(http.MethodDelete, "/bookings?id=booking-1", nil)
@@ -394,8 +394,8 @@ func TestDeleteBookingConsumedForbidden(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceConsumed, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceConsumed, "", 0, 24, 0,
 	)
 
 	req := httptest.NewRequest(http.MethodDelete, "/bookings?id=booking-1", nil)
@@ -416,8 +416,8 @@ func TestBulkCancelHandler(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	for i := 0; i < 3; i++ {
 		db.Exec(
-			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-			"booking-"+string(rune('1'+i)), "testuser", "", "nvidia.com/gpu", i, today, "full", "now", database.SourceReserved, "", 0, 24,
+			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			"booking-"+string(rune('1'+i)), "testuser", "", "nvidia.com/gpu", i, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 		)
 	}
 
@@ -551,12 +551,12 @@ func TestBulkCancelHandlerMixedOwnership(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	// testuser owns booking-1, alice owns booking-2
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 	)
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-2", "alice", "", "nvidia.com/gpu", 1, today, "full", "now", database.SourceReserved, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-2", "alice", "", "nvidia.com/gpu", 1, today, "full", "now", database.SourceReserved, "", 0, 24, 0,
 	)
 
 	body := `{"ids":["booking-1","booking-2"]}`
@@ -589,8 +589,8 @@ func TestBulkCancelHandlerConsumedBooking(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceConsumed, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "testuser", "", "nvidia.com/gpu", 0, today, "full", "now", database.SourceConsumed, "", 0, 24, 0,
 	)
 
 	body := `{"ids":["booking-1"]}`
@@ -662,8 +662,8 @@ func TestBulkBookingHandlerEvictsConsumed(t *testing.T) {
 	date := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	// Fill slot 0 with a consumed booking
 	db.Exec(
-		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-		"consumed-1", "kueue-user", "", "nvidia.com/gpu", 0, date, "full", "now", database.SourceConsumed, "", 0, 24,
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"consumed-1", "kueue-user", "", "nvidia.com/gpu", 0, date, "full", "now", database.SourceConsumed, "", 0, 24, 0,
 	)
 
 	body := `{"resources":{"nvidia.com/gpu":1},"startDate":"` + date + `","endDate":"` + date + `","description":"","startHour":0,"endHour":24}`
@@ -693,8 +693,8 @@ func TestBulkBookingHandlerAllSlotsTaken(t *testing.T) {
 	// Fill all 8 GPU slots with reserved bookings
 	for i := range 8 {
 		db.Exec(
-			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-			fmt.Sprintf("existing-%d", i), "alice", "", "nvidia.com/gpu", i, date, "full", "now", database.SourceReserved, "", 0, 24,
+			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			fmt.Sprintf("existing-%d", i), "alice", "", "nvidia.com/gpu", i, date, "full", "now", database.SourceReserved, "", 0, 24, 0,
 		)
 	}
 
@@ -718,8 +718,8 @@ func TestBulkBookingHandlerPartialSlots(t *testing.T) {
 	// Fill 7 of 8 slots
 	for i := range 7 {
 		db.Exec(
-			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-			fmt.Sprintf("existing-%d", i), "alice", "", "nvidia.com/gpu", i, date, "full", "now", database.SourceReserved, "", 0, 24,
+			"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			fmt.Sprintf("existing-%d", i), "alice", "", "nvidia.com/gpu", i, date, "full", "now", database.SourceReserved, "", 0, 24, 0,
 		)
 	}
 

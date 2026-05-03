@@ -44,9 +44,18 @@ func GetBookings(w http.ResponseWriter, r *http.Request) {
 
 	// Build active reservations map: user -> clusterqueue name
 	activeRes := map[string]string{}
-	today := time.Now().Format("2006-01-02")
+	now := time.Now().UTC()
 	for _, b := range bookings {
-		if b.Source == database.SourceReserved && b.Date == today {
+		if b.Source != database.SourceReserved {
+			continue
+		}
+		base, err := time.Parse("2006-01-02", b.Date)
+		if err != nil {
+			continue
+		}
+		utcStart := base.Add(time.Duration(b.StartHour-b.UtcOffset) * time.Hour)
+		utcEnd := base.Add(time.Duration(b.EndHour-b.UtcOffset) * time.Hour)
+		if !now.Before(utcStart) && now.Before(utcEnd) {
 			if _, ok := activeRes[b.User]; !ok {
 				activeRes[b.User] = "user-" + b.User
 			}
@@ -73,6 +82,7 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		StartHour   int    `json:"startHour"`
 		EndHour     int    `json:"endHour"`
+		UtcOffset   int    `json:"utcOffset"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		HttpError(w, http.StatusBadRequest, "invalid_request")
@@ -98,7 +108,7 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate date format and bounds
-	if !IsValidBookingDate(req.Date, BookingWindowDays) {
+	if !IsValidBookingDate(req.Date, BookingWindowDays, req.UtcOffset) {
 		HttpError(w, http.StatusBadRequest, "invalid_date")
 		return
 	}
@@ -161,9 +171,14 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 		endHour = 24
 	}
 
+	utcOffset := req.UtcOffset
+	if utcOffset < -12 || utcOffset > 14 {
+		utcOffset = 0
+	}
+
 	_, err = db.ExecContext(ctx,
-		"INSERT INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		id, user.Username, "", req.Resource, req.SlotIndex, req.Date, req.SlotType, createdAt, database.SourceReserved, desc, startHour, endHour,
+		"INSERT INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour, utc_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		id, user.Username, "", req.Resource, req.SlotIndex, req.Date, req.SlotType, createdAt, database.SourceReserved, desc, startHour, endHour, utcOffset,
 	)
 	if err != nil {
 		JsonResponseStatus(w, http.StatusConflict, map[string]string{"error": "slot_taken"})
@@ -182,6 +197,7 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 		Description: desc,
 		StartHour:   startHour,
 		EndHour:     endHour,
+		UtcOffset:   utcOffset,
 	}
 
 	slog.Info("AUDIT: booking created", "user", user.Username, "bookingId", id, "resource", req.Resource, "slot", req.SlotIndex, "date", req.Date, "remote_addr", r.RemoteAddr)
@@ -323,6 +339,7 @@ func BulkBookingHandler(w http.ResponseWriter, r *http.Request) {
 		Description string         `json:"description"`
 		StartHour   int            `json:"startHour"`
 		EndHour     int            `json:"endHour"`
+		UtcOffset   int            `json:"utcOffset"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		HttpError(w, http.StatusBadRequest, "invalid_request")
@@ -359,6 +376,11 @@ func BulkBookingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if endHour < 1 || endHour > 24 {
 		endHour = 24
+	}
+
+	utcOffset := req.UtcOffset
+	if utcOffset < -12 || utcOffset > 14 {
+		utcOffset = 0
 	}
 
 	start, err := time.Parse("2006-01-02", req.StartDate)
@@ -502,8 +524,8 @@ func BulkBookingHandler(w http.ResponseWriter, r *http.Request) {
 				createdAt := time.Now().UTC().Format(time.RFC3339)
 
 				_, err := tx.ExecContext(ctx,
-					"INSERT INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-					id, user.Username, "", resource, unitIdx, date, database.SlotTypeFull, createdAt, database.SourceReserved, desc, startHour, endHour,
+					"INSERT INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour, utc_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					id, user.Username, "", resource, unitIdx, date, database.SlotTypeFull, createdAt, database.SourceReserved, desc, startHour, endHour, utcOffset,
 				)
 				if err != nil {
 					slog.Error("bulk booking: insert failed", "resource", resource, "slot", unitIdx, "date", date, "error", err)
@@ -522,6 +544,7 @@ func BulkBookingHandler(w http.ResponseWriter, r *http.Request) {
 					Description: desc,
 					StartHour:   startHour,
 					EndHour:     endHour,
+					UtcOffset:   utcOffset,
 				})
 				booked++
 			}

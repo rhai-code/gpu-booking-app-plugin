@@ -24,6 +24,7 @@ type Booking struct {
 	Description string `json:"description"`
 	StartHour   int    `json:"startHour"`
 	EndHour     int    `json:"endHour"`
+	UtcOffset   int    `json:"utcOffset"`
 }
 
 // GPUResourceSpec defines a single GPU resource type with all its properties.
@@ -128,6 +129,7 @@ func OpenDB(dbPath string) error {
 			description TEXT NOT NULL DEFAULT '',
 			start_hour INTEGER NOT NULL DEFAULT 0,
 			end_hour INTEGER NOT NULL DEFAULT 24,
+			utc_offset INTEGER NOT NULL DEFAULT 0,
 			UNIQUE(resource, slot_index, date, slot_type)
 		)
 	`)
@@ -145,6 +147,7 @@ func OpenDB(dbPath string) error {
 	db.Exec("ALTER TABLE bookings ADD COLUMN description TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE bookings ADD COLUMN start_hour INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE bookings ADD COLUMN end_hour INTEGER NOT NULL DEFAULT 24")
+	db.Exec("ALTER TABLE bookings ADD COLUMN utc_offset INTEGER NOT NULL DEFAULT 0")
 
 	return nil
 }
@@ -196,8 +199,8 @@ func LoadConfigFromFile(path string) error {
 
 func ScanBooking(rows *sql.Rows) (Booking, error) {
 	var b Booking
-	err := rows.Scan(&b.ID, &b.User, &b.Email, &b.Resource, &b.SlotIndex, &b.Date, &b.SlotType, &b.CreatedAt, &b.Source, &b.Description, &b.StartHour, &b.EndHour)
+	err := rows.Scan(&b.ID, &b.User, &b.Email, &b.Resource, &b.SlotIndex, &b.Date, &b.SlotType, &b.CreatedAt, &b.Source, &b.Description, &b.StartHour, &b.EndHour, &b.UtcOffset)
 	return b, err
 }
 
-const BookingColumns = "id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour"
+const BookingColumns = "id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour, utc_offset"

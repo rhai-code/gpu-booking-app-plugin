@@ -7,6 +7,8 @@ import {
   getMonthStartOffset,
   getDateRange,
   formatHour,
+  getUtcOffsetHours,
+  isPastDate,
   buildGpuEquivalentMap,
   totalGpuEquivalents,
   FALLBACK_GPU_RESOURCES,
@@ -152,5 +154,44 @@ describe('totalGpuEquivalents', () => {
 
   it('calculates for single resource', () => {
     expect(totalGpuEquivalents([{ name: 'X', type: 'x', count: 4, share: 0.1, gpuEquivalent: 0.5 }])).toBe(2);
+  });
+});
+
+describe('getUtcOffsetHours', () => {
+  it('returns a number for a valid date', () => {
+    const offset = getUtcOffsetHours('2025-06-15');
+    expect(typeof offset).toBe('number');
+  });
+
+  it('returns consistent offset for the same date', () => {
+    const a = getUtcOffsetHours('2025-01-15');
+    const b = getUtcOffsetHours('2025-01-15');
+    expect(a).toBe(b);
+  });
+
+  it('offset is within valid range (-12 to +14)', () => {
+    const offset = getUtcOffsetHours('2025-06-15');
+    expect(offset).toBeGreaterThanOrEqual(-12);
+    expect(offset).toBeLessThanOrEqual(14);
+  });
+
+  it('is the inverse of getTimezoneOffset', () => {
+    const date = new Date(2025, 5, 15);
+    const expected = -date.getTimezoneOffset() / 60;
+    expect(getUtcOffsetHours('2025-06-15')).toBe(expected);
+  });
+});
+
+describe('isPastDate', () => {
+  it('returns true for a date well in the past', () => {
+    expect(isPastDate('2020-01-01')).toBe(true);
+  });
+
+  it('returns false for a date well in the future', () => {
+    expect(isPastDate('2099-12-31')).toBe(false);
+  });
+
+  it('returns false for today', () => {
+    expect(isPastDate(todayStr())).toBe(false);
   });
 });

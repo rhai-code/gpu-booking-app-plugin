@@ -142,7 +142,8 @@ const BookingCell: React.FC<BookingCellProps> = ({
         )}
         {(booking.startHour !== 0 || booking.endHour !== 24) && (
           <div style={{ fontSize: '10px', color: 'var(--pf-t--global--text--color--regular)', opacity: 0.7 }}>
-            {formatHour(booking.startHour)}&mdash;{booking.endHour === 24 ? '00:00' : formatHour(booking.endHour)} UTC
+            {formatHour(booking.startHour)}&mdash;{booking.endHour === 24 ? '00:00' : formatHour(booking.endHour)}{' '}
+            (UTC{booking.utcOffset >= 0 ? '+' : ''}{booking.utcOffset})
           </div>
         )}
         {renderActions()}

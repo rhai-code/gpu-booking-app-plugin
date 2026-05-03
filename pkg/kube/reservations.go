@@ -154,44 +154,57 @@ func SyncReservations() {
 }
 
 func getActiveReservations() ([]userReservation, error) {
+	return getActiveReservationsAt(time.Now().UTC())
+}
+
+func getActiveReservationsAt(now time.Time) ([]userReservation, error) {
 	db := database.DB()
-	now := time.Now().UTC()
-	today := now.Format("2006-01-02")
-	currentHour := now.Hour()
+	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+	tomorrow := now.AddDate(0, 0, 1).Format("2006-01-02")
 
 	rows, err := db.Query(
-		`SELECT user, resource, COUNT(DISTINCT slot_index) as unit_count, MAX(end_hour) as max_end_hour, MAX(date) as max_date
-		 FROM bookings WHERE date = ? AND source = ? AND start_hour <= ? AND end_hour > ?
-		 GROUP BY user, resource`,
-		today, database.SourceReserved, currentHour, currentHour,
+		`SELECT user, resource, slot_index, date, start_hour, end_hour, utc_offset
+		 FROM bookings WHERE date BETWEEN ? AND ? AND source = ?`,
+		yesterday, tomorrow, database.SourceReserved,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying reservations: %w", err)
 	}
 	defer rows.Close()
 
-	userMap := map[string]map[string]int{}
-	userMaxEndHour := map[string]int{}
-	userMaxDate := map[string]string{}
+	userMap := map[string]map[string]map[int]bool{}
+	userMaxUtcEnd := map[string]time.Time{}
 	for rows.Next() {
-		var user, resource, maxDate string
-		var count, maxEndHour int
-		if err := rows.Scan(&user, &resource, &count, &maxEndHour, &maxDate); err != nil {
+		var user, resource, date string
+		var slotIndex, startHour, endHour, utcOffset int
+		if err := rows.Scan(&user, &resource, &slotIndex, &date, &startHour, &endHour, &utcOffset); err != nil {
 			continue
 		}
 		if !database.IsGPUResource(resource) {
 			continue
 		}
-		if _, ok := userMap[user]; !ok {
-			userMap[user] = map[string]int{}
-		}
-		userMap[user][resource] += count
 
-		if maxEndHour > userMaxEndHour[user] {
-			userMaxEndHour[user] = maxEndHour
+		base, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			continue
 		}
-		if maxDate > userMaxDate[user] {
-			userMaxDate[user] = maxDate
+		utcStart := base.Add(time.Duration(startHour-utcOffset) * time.Hour)
+		utcEnd := base.Add(time.Duration(endHour-utcOffset) * time.Hour)
+
+		if now.Before(utcStart) || !now.Before(utcEnd) {
+			continue
+		}
+
+		if _, ok := userMap[user]; !ok {
+			userMap[user] = map[string]map[int]bool{}
+		}
+		if _, ok := userMap[user][resource]; !ok {
+			userMap[user][resource] = map[int]bool{}
+		}
+		userMap[user][resource][slotIndex] = true
+
+		if utcEnd.After(userMaxUtcEnd[user]) {
+			userMaxUtcEnd[user] = utcEnd
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -199,21 +212,13 @@ func getActiveReservations() ([]userReservation, error) {
 	}
 
 	var reservations []userReservation
-	for user, resources := range userMap {
-		endHour := userMaxEndHour[user]
-		if endHour <= 0 {
-			endHour = 24
+	for user, resourceSlots := range userMap {
+		resources := map[string]int{}
+		for resource, slots := range resourceSlots {
+			resources[resource] = len(slots)
 		}
-		bookingDate, err := time.Parse("2006-01-02", userMaxDate[user])
-		if err != nil {
-			bookingDate = now
-		}
-		var until time.Time
-		if endHour >= 24 {
-			until = bookingDate.AddDate(0, 0, 1)
-		} else {
-			until = time.Date(bookingDate.Year(), bookingDate.Month(), bookingDate.Day(), endHour, 0, 0, 0, time.UTC)
-		}
+
+		until := userMaxUtcEnd[user]
 
 		res := userReservation{
 			User:      user,

@@ -325,7 +325,7 @@ func parseResourceCount(total string) int {
 
 
 func getBookingDates() []string {
-	today := time.Now()
+	today := time.Now().UTC()
 	var days int
 	if KueueBookingDays > 0 {
 		days = KueueBookingDays
@@ -400,7 +400,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 	existing := map[string]bool{}
 	toRemove := []string{}
 
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
 	for rows.Next() {
 		var id, resource, date, slotType string
 		var slotIndex int
@@ -448,7 +448,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 		}
 
 		_, err = db.Exec(
-			"INSERT OR IGNORE INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour) VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, '', 0, 24)",
+			"INSERT OR IGNORE INTO bookings (id, user, email, resource, slot_index, date, slot_type, created_at, source, description, start_hour, end_hour, utc_offset) VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, '', 0, 24, 0)",
 			id, user, key.resource, key.slotIndex, key.date, key.slotType, createdAt, database.SourceConsumed,
 		)
 		if err != nil {

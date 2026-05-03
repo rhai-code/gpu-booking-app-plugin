@@ -130,13 +130,14 @@ const BookingPage: React.FC = () => {
     startDate: string,
     endDate: string,
     description: string,
-    startHourUtc: number,
-    endHourUtc: number,
+    startHour: number,
+    endHour: number,
+    utcOffset: number,
   ) => {
     if (editBooking) {
       await cancelBooking(editBooking.id);
     }
-    await createBulkBooking({ resources, startDate, endDate, description, startHour: startHourUtc, endHour: endHourUtc });
+    await createBulkBooking({ resources, startDate, endDate, description, startHour, endHour, utcOffset });
     setShowBookingModal(false);
     setEditBooking(null);
     await fetchBookings();

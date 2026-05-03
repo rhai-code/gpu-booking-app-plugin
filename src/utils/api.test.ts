@@ -119,6 +119,7 @@ describe('createBulkBooking', () => {
       description: 'test',
       startHour: 0,
       endHour: 24,
+      utcOffset: 0,
     });
 
     expect(result).toEqual(data);

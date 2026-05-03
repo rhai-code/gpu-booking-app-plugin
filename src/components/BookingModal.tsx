@@ -22,7 +22,6 @@ import {
   HOUR_OPTIONS,
   formatHour,
   getUtcOffsetHours,
-  utcHourToLocal,
 } from '../utils/constants';
 
 interface BookingModalProps {
@@ -38,8 +37,9 @@ interface BookingModalProps {
     startDate: string,
     endDate: string,
     description: string,
-    startHourUtc: number,
-    endHourUtc: number,
+    startHour: number,
+    endHour: number,
+    utcOffset: number,
   ) => Promise<void>;
 }
 
@@ -59,10 +59,10 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [start, setStart] = React.useState(editBooking?.date || startDate);
   const [end, setEnd] = React.useState(editBooking?.date || endDate);
   const [startHourLocal, setStartHourLocal] = React.useState(
-    editBooking ? utcHourToLocal(editBooking.startHour, editBooking.date) : 0,
+    editBooking ? editBooking.startHour : 0,
   );
   const [endHourLocal, setEndHourLocal] = React.useState(
-    editBooking ? utcHourToLocal(editBooking.endHour, editBooking.date) : 24,
+    editBooking ? editBooking.endHour : 24,
   );
   const [description, setDescription] = React.useState(editBooking?.description || '');
   const [submitting, setSubmitting] = React.useState(false);
@@ -104,9 +104,9 @@ const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   const totalResources = Object.values(resources).reduce((s, c) => s + c, 0);
+  const isFullDay = startHourLocal === 0 && endHourLocal === 24;
   const startHourUtc = ((startHourLocal - Math.round(utcOffset)) % 24 + 24) % 24;
   const endHourUtc = endHourLocal === 24 ? 24 : ((endHourLocal - Math.round(utcOffset)) % 24 + 24) % 24;
-  const isFullDay = startHourLocal === 0 && endHourLocal === 24;
 
   const gpuEquivMap: Record<string, number> = {};
   for (const r of gpuResources) gpuEquivMap[r.type] = r.gpuEquivalent;
@@ -121,7 +121,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(resources, start, end, description, isFullDay ? 0 : startHourUtc, isFullDay ? 24 : endHourUtc);
+      await onSubmit(resources, start, end, description, startHourLocal, endHourLocal, Math.round(utcOffset));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create bookings');
       setSubmitting(false);

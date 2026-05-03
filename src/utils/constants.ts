@@ -19,6 +19,7 @@ export interface Booking {
   description: string;
   startHour: number;
   endHour: number;
+  utcOffset: number;
 }
 
 export const FALLBACK_GPU_RESOURCES: GPUResource[] = [
@@ -118,12 +119,6 @@ export function getUtcOffsetHours(dateStr: string): number {
 export function formatHour(h: number): string {
   if (h === 24) return '00:00 +1d';
   return `${String(h).padStart(2, '0')}:00`;
-}
-
-export function utcHourToLocal(utcHour: number, dateStr: string): number {
-  const offset = getUtcOffsetHours(dateStr);
-  if (utcHour === 24) return 24;
-  return ((utcHour + Math.round(offset)) % 24 + 24) % 24;
 }
 
 export function getDateRange(a: string, b: string): string[] {
