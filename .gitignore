@@ -5,3 +5,4 @@ dist/
 .playwright-cli/
 coverage/
 coverage-go/
+.vscode/
