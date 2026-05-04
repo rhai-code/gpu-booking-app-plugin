@@ -111,7 +111,7 @@ const GpuUsagePanel: React.FC<GpuUsagePanelProps> = ({ bookings, resources, sele
                     </span>
                   </div>
                   <span style={{ fontSize: '12px', color: 'var(--pf-t--global--text--color--regular)', opacity: 0.7 }}>
-                    {consumedCount + reservedCount} / {totalSlots} booked
+                    {usage.totalBooked} / {totalSlots} booked
                   </span>
                 </div>
 
