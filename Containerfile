@@ -1,5 +1,5 @@
 # Stage 1: Build frontend
-FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS frontend-builder
+FROM registry.access.redhat.com/ubi9/nodejs-20:latest AS frontend-builder
 USER 0
 WORKDIR /app
 COPY package.json yarn.lock* ./
