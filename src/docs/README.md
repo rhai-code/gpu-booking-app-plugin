@@ -1,3 +1,3 @@
 # GPU Resource Booking
 
-> Reserve H200 GPU resources with MIG partitioning for your AI/ML workloads
+> Reserve GPU resources for your AI/ML workloads with auto-discovered cluster configuration

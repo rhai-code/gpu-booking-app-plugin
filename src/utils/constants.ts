@@ -23,10 +23,7 @@ export interface Booking {
 }
 
 export const FALLBACK_GPU_RESOURCES: GPUResource[] = [
-  { name: 'H200 Full GPU', type: 'nvidia.com/gpu', count: 8, share: 0.0625, gpuEquivalent: 1.0 },
-  { name: 'MIG 3g.71gb', type: 'nvidia.com/mig-3g.71gb', count: 8, share: 0.03125, gpuEquivalent: 0.5 },
-  { name: 'MIG 2g.35gb', type: 'nvidia.com/mig-2g.35gb', count: 8, share: 0.015625, gpuEquivalent: 0.25 },
-  { name: 'MIG 1g.18gb', type: 'nvidia.com/mig-1g.18gb', count: 16, share: 0.0078125, gpuEquivalent: 0.125 },
+  { name: 'Full GPU', type: 'nvidia.com/gpu', count: 8, share: 1.0, gpuEquivalent: 1.0 },
 ];
 
 export function buildGpuEquivalentMap(resources: GPUResource[]): Record<string, number> {
@@ -41,12 +38,32 @@ export function totalGpuEquivalents(resources: GPUResource[]): number {
 
 export const SLOT_TYPE = 'full';
 
-export const RESOURCE_COLORS: Record<string, string> = {
+const KNOWN_RESOURCE_COLORS: Record<string, string> = {
   'nvidia.com/gpu': '#0066CC',
   'nvidia.com/mig-3g.71gb': '#5E40BE',
   'nvidia.com/mig-2g.35gb': '#009596',
   'nvidia.com/mig-1g.18gb': '#F0AB00',
 };
+
+const COLOR_PALETTE = [
+  '#0066CC', '#5E40BE', '#009596', '#F0AB00',
+  '#C9190B', '#3E8635', '#8F4700', '#002F5D',
+  '#470000', '#2A265F',
+];
+
+const dynamicColorCache: Record<string, string> = {};
+
+export function getResourceColor(resourceType: string): string {
+  if (KNOWN_RESOURCE_COLORS[resourceType]) return KNOWN_RESOURCE_COLORS[resourceType];
+  if (dynamicColorCache[resourceType]) return dynamicColorCache[resourceType];
+  const used = new Set([...Object.values(KNOWN_RESOURCE_COLORS), ...Object.values(dynamicColorCache)]);
+  const color = COLOR_PALETTE.find((c) => !used.has(c))
+    || COLOR_PALETTE[Object.keys(dynamicColorCache).length % COLOR_PALETTE.length];
+  dynamicColorCache[resourceType] = color;
+  return color;
+}
+
+export const RESOURCE_COLORS = KNOWN_RESOURCE_COLORS;
 
 export const FREE_COLOR = '#6A6E73';
 export const CONSUMED_COLOR = '#4CB140';

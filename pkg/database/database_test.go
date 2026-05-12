@@ -7,16 +7,8 @@ import (
 )
 
 func TestIsGPUResource(t *testing.T) {
-	known := []string{
-		"nvidia.com/gpu",
-		"nvidia.com/mig-3g.71gb",
-		"nvidia.com/mig-2g.35gb",
-		"nvidia.com/mig-1g.18gb",
-	}
-	for _, r := range known {
-		if !IsGPUResource(r) {
-			t.Errorf("expected known GPU resource: %q", r)
-		}
+	if !IsGPUResource("nvidia.com/gpu") {
+		t.Error("expected known GPU resource: nvidia.com/gpu")
 	}
 
 	unknown := []string{
@@ -38,25 +30,14 @@ func TestGPUSpecByType(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok for nvidia.com/gpu")
 	}
-	if spec.Name != "H200 Full GPU" {
-		t.Errorf("Name = %q, want H200 Full GPU", spec.Name)
+	if spec.Name != "Full GPU" {
+		t.Errorf("Name = %q, want Full GPU", spec.Name)
 	}
 	if spec.Count != 8 {
 		t.Errorf("Count = %d, want 8", spec.Count)
 	}
 	if spec.GPUEquivalent != 1.0 {
 		t.Errorf("GPUEquivalent = %f, want 1.0", spec.GPUEquivalent)
-	}
-
-	spec, ok = GPUSpecByType("nvidia.com/mig-1g.18gb")
-	if !ok {
-		t.Fatal("expected ok for mig-1g.18gb")
-	}
-	if spec.Count != 16 {
-		t.Errorf("Count = %d, want 16", spec.Count)
-	}
-	if spec.GPUEquivalent != 0.125 {
-		t.Errorf("GPUEquivalent = %f, want 0.125", spec.GPUEquivalent)
 	}
 
 	_, ok = GPUSpecByType("nonexistent")
@@ -73,11 +54,12 @@ func TestGetConfig(t *testing.T) {
 	if len(cfg.Resources) == 0 {
 		t.Fatal("expected non-empty Resources")
 	}
-	if cfg.TotalCPU != TotalCPU {
-		t.Errorf("TotalCPU = %d, want %d", cfg.TotalCPU, TotalCPU)
+	gpuCfg := GetGPUConfig()
+	if cfg.TotalCPU != gpuCfg.TotalCPU {
+		t.Errorf("TotalCPU = %d, want %d", cfg.TotalCPU, gpuCfg.TotalCPU)
 	}
-	if cfg.TotalMemory != TotalMemory {
-		t.Errorf("TotalMemory = %d, want %d", cfg.TotalMemory, TotalMemory)
+	if cfg.TotalMemory != gpuCfg.TotalMemory {
+		t.Errorf("TotalMemory = %d, want %d", cfg.TotalMemory, gpuCfg.TotalMemory)
 	}
 }
 
@@ -178,16 +160,51 @@ func TestUniqueConstraint(t *testing.T) {
 	}
 }
 
+func TestSetGetGPUConfig(t *testing.T) {
+	origCfg := GetGPUConfig()
+	defer SetGPUConfig(origCfg)
+
+	custom := &GPUConfig{
+		Resources: []GPUResourceSpec{
+			{Name: "Test GPU", Type: "test/gpu", Count: 4, Share: 1.0, GPUEquivalent: 1.0},
+		},
+		TotalCPU:    128,
+		TotalMemory: 512,
+		FlavorName:  "test-flavor",
+	}
+	SetGPUConfig(custom)
+
+	got := GetGPUConfig()
+	if len(got.Resources) != 1 || got.Resources[0].Name != "Test GPU" {
+		t.Errorf("Resources not updated: %+v", got.Resources)
+	}
+	if got.TotalCPU != 128 {
+		t.Errorf("TotalCPU = %d, want 128", got.TotalCPU)
+	}
+	if got.FlavorName != "test-flavor" {
+		t.Errorf("FlavorName = %q, want test-flavor", got.FlavorName)
+	}
+}
+
+func TestFlavorName(t *testing.T) {
+	origCfg := GetGPUConfig()
+	defer SetGPUConfig(origCfg)
+
+	// Default config has no flavor name — should return "h200" fallback
+	SetGPUConfig(&GPUConfig{FlavorName: ""})
+	if got := FlavorName(); got != "h200" {
+		t.Errorf("FlavorName() = %q, want 'h200' fallback", got)
+	}
+
+	SetGPUConfig(&GPUConfig{FlavorName: "a100"})
+	if got := FlavorName(); got != "a100" {
+		t.Errorf("FlavorName() = %q, want 'a100'", got)
+	}
+}
+
 func TestLoadConfigFromFile(t *testing.T) {
-	origSpecs := make([]GPUResourceSpec, len(GPUResourceSpecs))
-	copy(origSpecs, GPUResourceSpecs)
-	origCPU := TotalCPU
-	origMem := TotalMemory
-	defer func() {
-		GPUResourceSpecs = origSpecs
-		TotalCPU = origCPU
-		TotalMemory = origMem
-	}()
+	origCfg := GetGPUConfig()
+	defer SetGPUConfig(origCfg)
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "gpu.json")
@@ -207,14 +224,15 @@ func TestLoadConfigFromFile(t *testing.T) {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
 
-	if len(GPUResourceSpecs) != 1 || GPUResourceSpecs[0].Name != "Test GPU" {
-		t.Errorf("Resources not overwritten: %+v", GPUResourceSpecs)
+	cfg := GetGPUConfig()
+	if len(cfg.Resources) != 1 || cfg.Resources[0].Name != "Test GPU" {
+		t.Errorf("Resources not overwritten: %+v", cfg.Resources)
 	}
-	if TotalCPU != 128 {
-		t.Errorf("TotalCPU = %d, want 128", TotalCPU)
+	if cfg.TotalCPU != 128 {
+		t.Errorf("TotalCPU = %d, want 128", cfg.TotalCPU)
 	}
-	if TotalMemory != 2048 {
-		t.Errorf("TotalMemory = %d, want 2048", TotalMemory)
+	if cfg.TotalMemory != 2048 {
+		t.Errorf("TotalMemory = %d, want 2048", cfg.TotalMemory)
 	}
 }
 

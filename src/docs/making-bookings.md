@@ -30,7 +30,7 @@ This opens the booking dialog.
 
 ### GPU equivalents
 
-The dialog shows a running total of GPU equivalents for your selection. One H200 Full GPU = 1.0 equivalent. MIG partitions are fractional (e.g., MIG 3g.71gb = 0.5, MIG 1g.18gb = 0.125).
+The dialog shows a running total of GPU equivalents for your selection. A full GPU = 1.0 equivalent. MIG partitions are fractional, calculated from their memory relative to the full GPU.
 
 ![images/gpu-equivalents.png](images/gpu-equivalents.png)
 
@@ -93,7 +93,7 @@ When you have many bookings across multiple dates and resource types, you can ca
 
 If you only want to cancel bookings for specific resource types, use the **resource selector** to deselect the types you want to keep. The Cancel All count updates automatically to reflect only the selected resources.
 
-For example, if you booked both H200 Full GPU and MIG 1g.18gb but only want to cancel the MIG bookings, deselect H200 Full GPU from the resource selector.
+For example, if you booked both full GPU and MIG resources but only want to cancel the MIG bookings, deselect the full GPU card from the resource selector.
 
 ![images/cancel-all-filtered.png](images/cancel-all-filtered.png)
 

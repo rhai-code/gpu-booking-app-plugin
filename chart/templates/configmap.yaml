@@ -1,3 +1,4 @@
+{{- if not .Values.gpuDiscovery.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,3 +11,4 @@ metadata:
 data:
   gpu-config.json: |
     {{- .Values.gpuConfig | toPrettyJson | nindent 4 }}
+{{- end }}

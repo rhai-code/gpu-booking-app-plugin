@@ -25,7 +25,7 @@ import {
   Split,
   SplitItem,
 } from '@patternfly/react-core';
-import { SyncIcon, DownloadIcon, UploadIcon, TrashIcon } from '@patternfly/react-icons';
+import { SyncIcon, DownloadIcon, UploadIcon, TrashIcon, SearchIcon } from '@patternfly/react-icons';
 import {
   Table,
   Thead,
@@ -43,6 +43,7 @@ import {
   adminToggleReservationSync,
   adminExportDatabase,
   adminImportDatabase,
+  adminTriggerDiscovery,
   AdminResponse,
 } from '../utils/api';
 import { GPUResource, FALLBACK_GPU_RESOURCES } from '../utils/constants';
@@ -62,6 +63,7 @@ const AdminPage: React.FC = () => {
   const [showDeleteAll, setShowDeleteAll] = React.useState(false);
   const [importFile, setImportFile] = React.useState<File | null>(null);
   const [importFilename, setImportFilename] = React.useState('');
+  const [discovering, setDiscovering] = React.useState(false);
   const [gpuResources, setGpuResources] = React.useState<GPUResource[]>(FALLBACK_GPU_RESOURCES);
   const [selectedResources, setSelectedResources] = React.useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = React.useState<'all' | 'reserved' | 'consumed'>('all');
@@ -128,6 +130,22 @@ const AdminPage: React.FC = () => {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Toggle failed');
     }
+  };
+
+  const handleDiscover = async () => {
+    setDiscovering(true);
+    setError(null);
+    try {
+      const result = await adminTriggerDiscovery();
+      if (result.resources?.length > 0) {
+        setGpuResources(result.resources);
+        setSelectedResources(result.resources.map((r) => r.type));
+      }
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'GPU discovery failed');
+    }
+    setDiscovering(false);
   };
 
   const handleImport = async () => {
@@ -232,6 +250,17 @@ const AdminPage: React.FC = () => {
                     isChecked={data?.reservationSyncEnabled || false}
                     onChange={(_e, checked) => handleToggleSync(checked)}
                   />
+                </SplitItem>
+                <SplitItem>
+                  <Button
+                    variant="secondary"
+                    icon={<SearchIcon />}
+                    onClick={handleDiscover}
+                    isLoading={discovering}
+                    isDisabled={discovering}
+                  >
+                    Discover GPUs
+                  </Button>
                 </SplitItem>
                 <SplitItem>
                   <Button variant="secondary" icon={<DownloadIcon />} onClick={() => adminExportDatabase()}>

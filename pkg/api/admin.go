@@ -281,3 +281,41 @@ func AdminImportDatabase(w http.ResponseWriter, r *http.Request) {
 
 	JsonResponse(w, map[string]string{"status": "imported"})
 }
+
+func AdminDiscoverGPUHandler(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r)
+	if !user.IsAdmin {
+		HttpError(w, http.StatusForbidden, "admin_required")
+		return
+	}
+
+	slog.Info("AUDIT: admin GPU discovery triggered", "user", user.Username, "remote_addr", r.RemoteAddr)
+
+	result, err := kube.RunDiscovery()
+	if err != nil {
+		slog.Error("admin GPU discovery failed", "error", err)
+		HttpError(w, http.StatusInternalServerError, "discovery_failed: "+err.Error())
+		return
+	}
+	if result == nil {
+		HttpError(w, http.StatusNotFound, "no_gpu_nodes_found")
+		return
+	}
+
+	database.SetGPUConfig(&database.GPUConfig{
+		Resources:   result.Resources,
+		TotalCPU:    result.TotalCPU,
+		TotalMemory: result.TotalMemory,
+		FlavorName:  result.FlavorName,
+	})
+
+	slog.Info("admin GPU discovery applied", "resources", len(result.Resources), "totalCPU", result.TotalCPU, "totalMemory", result.TotalMemory, "flavorName", result.FlavorName)
+
+	JsonResponse(w, map[string]any{
+		"status":      "discovered",
+		"resources":   result.Resources,
+		"totalCpu":    result.TotalCPU,
+		"totalMemory": result.TotalMemory,
+		"flavorName":  result.FlavorName,
+	})
+}

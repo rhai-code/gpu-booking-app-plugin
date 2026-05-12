@@ -23,7 +23,6 @@ import {
   bulkCancelBookings,
 } from '../utils/api';
 import {
-  FALLBACK_GPU_RESOURCES,
   Booking,
   todayStr,
 } from '../utils/constants';
@@ -45,7 +44,7 @@ const BookingPage: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [reservingKey, setReservingKey] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [selectedResources, setSelectedResources] = React.useState<string[]>([FALLBACK_GPU_RESOURCES[0].type]);
+  const [selectedResources, setSelectedResources] = React.useState<string[]>([]);
   const [confirmCancelId, setConfirmCancelId] = React.useState<string | null>(null);
   const [showBookingModal, setShowBookingModal] = React.useState(false);
   const [editBooking, setEditBooking] = React.useState<Booking | null>(null);
@@ -58,6 +57,13 @@ const BookingPage: React.FC = () => {
   const [viewYear, setViewYear] = React.useState(now.getFullYear());
   const [viewMonth, setViewMonth] = React.useState(now.getMonth());
   const [selectedDates, setSelectedDates] = React.useState<string[]>([todayStr()]);
+
+  // Initialize selected resource when config loads
+  React.useEffect(() => {
+    if (gpuResources.length > 0 && selectedResources.length === 0) {
+      setSelectedResources([gpuResources[0].type]);
+    }
+  }, [gpuResources]);
 
   // Sync loading state from bookings hook
   React.useEffect(() => {
@@ -229,7 +235,9 @@ const BookingPage: React.FC = () => {
                 GPU Resource Booking
               </Title>
               <div style={{ color: 'var(--pf-t--global--text--color--regular)', opacity: 0.7, marginTop: '8px' }}>
-                Reserve H200 GPU resources with MIG partitioning
+                Reserve GPU resources
+                {gpuResources.length > 0 && ` — ${gpuResources[0].name.replace(/ Full GPU$/, '')}`}
+                {gpuResources.length > 1 && ' with MIG partitioning'}
               </div>
               <div style={{ fontFamily: 'monospace', color: 'var(--pf-t--global--text--color--regular)', opacity: 0.7, fontSize: '13px', marginTop: '4px' }}>
                 {utcNow}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -27,9 +28,6 @@ type Booking struct {
 	UtcOffset   int    `json:"utcOffset"`
 }
 
-// GPUResourceSpec defines a single GPU resource type with all its properties.
-// This is the single source of truth for the GPU pool — used by the API config
-// endpoint, reservation quota calculations, and Kueue sync filtering.
 type GPUResourceSpec struct {
 	Name          string  `json:"name"`
 	Type          string  `json:"type"`
@@ -38,17 +36,39 @@ type GPUResourceSpec struct {
 	GPUEquivalent float64 `json:"gpuEquivalent"`
 }
 
-var GPUResourceSpecs = []GPUResourceSpec{
-	{Name: "H200 Full GPU", Type: "nvidia.com/gpu", Count: 8, Share: 0.0625, GPUEquivalent: 1.0},
-	{Name: "MIG 3g.71gb", Type: "nvidia.com/mig-3g.71gb", Count: 8, Share: 0.03125, GPUEquivalent: 0.5},
-	{Name: "MIG 2g.35gb", Type: "nvidia.com/mig-2g.35gb", Count: 8, Share: 0.015625, GPUEquivalent: 0.25},
-	{Name: "MIG 1g.18gb", Type: "nvidia.com/mig-1g.18gb", Count: 16, Share: 0.0078125, GPUEquivalent: 0.125},
+type GPUConfig struct {
+	Resources   []GPUResourceSpec
+	TotalCPU    int
+	TotalMemory int
+	FlavorName  string
 }
 
-var (
-	TotalCPU    = 316
-	TotalMemory = 3460 // Gi
-)
+var gpuConfig atomic.Pointer[GPUConfig]
+
+func init() {
+	gpuConfig.Store(&GPUConfig{
+		Resources: []GPUResourceSpec{
+			{Name: "Full GPU", Type: "nvidia.com/gpu", Count: 8, Share: 1.0, GPUEquivalent: 1.0},
+		},
+		TotalCPU:    64,
+		TotalMemory: 256,
+	})
+}
+
+func GetGPUConfig() *GPUConfig {
+	return gpuConfig.Load()
+}
+
+func SetGPUConfig(cfg *GPUConfig) {
+	gpuConfig.Store(cfg)
+}
+
+func FlavorName() string {
+	if name := gpuConfig.Load().FlavorName; name != "" {
+		return name
+	}
+	return "h200"
+}
 
 const (
 	// Booking sources
@@ -66,9 +86,8 @@ type Config struct {
 	TotalMemory       int               `json:"totalMemory"`
 }
 
-// IsGPUResource returns true if the resource name is a known GPU resource type.
 func IsGPUResource(name string) bool {
-	for _, spec := range GPUResourceSpecs {
+	for _, spec := range gpuConfig.Load().Resources {
 		if spec.Type == name {
 			return true
 		}
@@ -76,9 +95,8 @@ func IsGPUResource(name string) bool {
 	return false
 }
 
-// GPUSpecByType returns the spec for a GPU resource type, or ok=false.
 func GPUSpecByType(resType string) (GPUResourceSpec, bool) {
-	for _, spec := range GPUResourceSpecs {
+	for _, spec := range gpuConfig.Load().Resources {
 		if spec.Type == resType {
 			return spec, true
 		}
@@ -159,41 +177,47 @@ func Close() {
 }
 
 func GetConfig(bookingWindowDays int) Config {
+	cfg := gpuConfig.Load()
 	return Config{
-		Resources:         GPUResourceSpecs,
+		Resources:         cfg.Resources,
 		BookingWindowDays: bookingWindowDays,
-		TotalCPU:          TotalCPU,
-		TotalMemory:       TotalMemory,
+		TotalCPU:          cfg.TotalCPU,
+		TotalMemory:       cfg.TotalMemory,
 	}
 }
 
-// gpuConfigFile is the JSON structure for the external GPU config file.
 type gpuConfigFile struct {
 	Resources   []GPUResourceSpec `json:"resources"`
 	TotalCPU    int               `json:"totalCpu"`
 	TotalMemory int               `json:"totalMemory"`
 }
 
-// LoadConfigFromFile reads GPU configuration from a JSON file, overwriting
-// the built-in defaults. Returns an error if the file cannot be read or parsed.
 func LoadConfigFromFile(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading gpu config: %w", err)
 	}
-	var cfg gpuConfigFile
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	var fileCfg gpuConfigFile
+	if err := json.Unmarshal(data, &fileCfg); err != nil {
 		return fmt.Errorf("parsing gpu config: %w", err)
 	}
-	if len(cfg.Resources) > 0 {
-		GPUResourceSpecs = cfg.Resources
+	current := gpuConfig.Load()
+	updated := &GPUConfig{
+		Resources:   current.Resources,
+		TotalCPU:    current.TotalCPU,
+		TotalMemory: current.TotalMemory,
+		FlavorName:  current.FlavorName,
 	}
-	if cfg.TotalCPU > 0 {
-		TotalCPU = cfg.TotalCPU
+	if len(fileCfg.Resources) > 0 {
+		updated.Resources = fileCfg.Resources
 	}
-	if cfg.TotalMemory > 0 {
-		TotalMemory = cfg.TotalMemory
+	if fileCfg.TotalCPU > 0 {
+		updated.TotalCPU = fileCfg.TotalCPU
 	}
+	if fileCfg.TotalMemory > 0 {
+		updated.TotalMemory = fileCfg.TotalMemory
+	}
+	gpuConfig.Store(updated)
 	return nil
 }
 

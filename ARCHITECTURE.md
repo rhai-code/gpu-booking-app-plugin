@@ -4,7 +4,7 @@ This document describes the architecture of the GPU Booking OpenShift Console Dy
 
 ## System Overview
 
-The GPU Booking Console Plugin is an OpenShift Console Dynamic Plugin that manages H200 GPU resources with MIG (Multi-Instance GPU) partitioning. It runs as a single pod serving both a React frontend (loaded into the OpenShift console) and a Go API backend. The system combines user-facing reservations with automatic Kueue workload tracking to provide a unified view of GPU allocation.
+The GPU Booking Console Plugin is an OpenShift Console Dynamic Plugin that manages GPU resources with optional MIG (Multi-Instance GPU) partitioning. GPU types, counts, and cluster capacity are auto-discovered from Kubernetes node labels and allocatable resources. It runs as a single pod serving both a React frontend (loaded into the OpenShift console) and a Go API backend. The system combines user-facing reservations with automatic Kueue workload tracking to provide a unified view of GPU allocation.
 
 **Key components:**
 - **Console Plugin** (React/PatternFly v6 frontend) - loaded into OpenShift console via `ConsolePlugin` CR
@@ -73,7 +73,7 @@ The frontend is a React application using PatternFly v6 components, bundled via 
 | `BookingGrid.tsx` | Per-resource slot grid showing reserved/consumed/available units with Reserve/Cancel/Edit/Override buttons |
 | `BookingModal.tsx` | Modal for multi-day GPU reservations with date range, time range, and resource quantity selectors |
 | `CalendarGrid.tsx` | Interactive month calendar with booking density indicators and date multi-select |
-| `ResourceSelector.tsx` | Card gallery for GPU resource type selection (H200, MIG 3g, 2g, 1g) with GPU equivalent weights |
+| `ResourceSelector.tsx` | Card gallery for GPU resource type selection (auto-discovered) with GPU equivalent weights |
 | `GpuUsagePanel.tsx` | Real-time usage bar chart showing consumed/reserved/free slots per resource type with hover-to-reveal usernames |
 | `PreemptionBanner.tsx` | Collapsible banner showing preempted Kueue workloads with owner, reason, message, and timestamp. Hidden when none |
 | `AdminPage.tsx` | Admin: view all bookings, delete bookings, toggle Kueue sync, export/import database |
@@ -159,20 +159,20 @@ This ensures `user-mhepburn` namespaces and ClusterQueues match the existing con
 
 ## GPU Resource Pool
 
-GPU resources are configured externally via a ConfigMap (`gpu-booking-plugin-gpu-config`), mounted as `/app/config/gpu-config.json`. This allows each cluster deployment to define its own GPU types, counts, and cluster totals without rebuilding the application. The backend falls back to built-in defaults if the config file is absent.
+GPU resources are auto-discovered from the cluster by querying Kubernetes nodes with the `nvidia.com/gpu.present=true` label. The discovery module (`pkg/kube/discovery.go`) extracts:
 
-The ConfigMap is generated from the `gpuConfig` section in `chart/values.yaml`. The default configuration manages a single H200 node:
+- **GPU product and memory** from node labels (`nvidia.com/gpu.product`, `nvidia.com/gpu.memory`)
+- **GPU and MIG counts** from `status.allocatable` resources (`nvidia.com/gpu`, `nvidia.com/mig-*`)
+- **Kueue ResourceFlavor names** from the Kueue API (used for reservation ClusterQueue flavors)
+- **Total CPU and memory** summed across all GPU nodes
 
-| Resource | Count | GPU Equivalent | CPU Share | CPU per Unit | Memory per Unit |
-|----------|-------|---------------|-----------|-------------|-----------------|
-| `nvidia.com/gpu` (Full H200) | 8 | 1.0 | 6.25% | 19 cores | 216 Gi |
-| `nvidia.com/mig-3g.71gb` | 8 | 0.5 | 3.125% | 9 cores | 108 Gi |
-| `nvidia.com/mig-2g.35gb` | 8 | 0.25 | 1.5625% | 4 cores | 54 Gi |
-| `nvidia.com/mig-1g.18gb` | 16 | 0.125 | 0.78125% | 2 cores | 27 Gi |
+GPU equivalent weights for MIG slices are calculated automatically as `mig_memory / full_gpu_memory`. The `share` field (fraction of total CPU/memory per unit) is derived from `gpuEquivalent / total_equivalent_units`.
 
-**Total pool:** 316 CPU cores, 3460 Gi memory, 16 GPU equivalents.
+Discovery runs at startup (synchronously, before Kueue/reservation sync) and then periodically (default: every 5 minutes). The configuration is stored in a thread-safe `atomic.Pointer[GPUConfig]` so concurrent readers always see a consistent snapshot. Administrators can trigger immediate re-discovery via `POST /api/admin/discover`.
 
-The config file path can be overridden with the `GPU_CONFIG_PATH` environment variable.
+Discovery assumes a **homogeneous GPU cluster** — all GPU nodes have the same GPU product. In heterogeneous clusters (e.g., mixed A100 and H100 nodes), all `nvidia.com/gpu` resources are aggregated into a single "Full GPU" entry using the product name from the first node returned by the API. MIG gpuEquivalent ratios are calculated against that first node's GPU memory. Per-product grouping is not currently supported.
+
+When auto-discovery is disabled (`GPU_DISCOVERY_ENABLED=false`), the backend falls back to a static ConfigMap (`gpu-booking-plugin-gpu-config`) mounted at `/app/config/gpu-config.json`, or built-in defaults if neither is available. The static config path supports heterogeneous clusters — you can define multiple full GPU entries (e.g., A100 and H100) with independent names, counts, shares, and gpuEquivalent weights in the same config file.
 
 ## Kueue Resource Hierarchy
 

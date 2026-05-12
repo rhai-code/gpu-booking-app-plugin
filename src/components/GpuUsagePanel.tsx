@@ -3,7 +3,7 @@ import { Card, CardBody, Title, Tooltip } from '@patternfly/react-core';
 import {
   Booking,
   GPUResource,
-  RESOURCE_COLORS,
+  getResourceColor,
   FREE_COLOR,
   CONSUMED_COLOR,
   RESERVED_COLOR,
@@ -102,7 +102,7 @@ const GpuUsagePanel: React.FC<GpuUsagePanelProps> = ({ bookings, resources, sele
                         height: '10px',
                         borderRadius: '50%',
                         display: 'inline-block',
-                        backgroundColor: RESOURCE_COLORS[resource.type] || '#888',
+                        backgroundColor: getResourceColor(resource.type),
                       }}
                     />
                     <span style={{ fontSize: '14px', fontWeight: 600 }}>{resource.name}</span>

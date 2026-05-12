@@ -45,6 +45,10 @@ kueue:
 
 bookingWindowDays: 30
 
+gpuDiscovery:
+  enabled: true
+  intervalSeconds: 600
+
 gpuConfig:
   resources:
     - name: "H200 Full GPU"

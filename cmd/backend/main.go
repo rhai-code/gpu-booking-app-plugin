@@ -54,6 +54,15 @@ func main() {
 		}
 	}
 
+	// GPU discovery config
+	kube.DiscoveryEnabled = os.Getenv("GPU_DISCOVERY_ENABLED") == "true"
+	kube.DiscoveryInterval = 600
+	if v := os.Getenv("GPU_DISCOVERY_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			kube.DiscoveryInterval = n
+		}
+	}
+
 	// Dev mode (anonymous admin access when outside cluster)
 	api.DevMode = os.Getenv("DEV_MODE") == "true"
 	if api.DevMode {
@@ -70,7 +79,8 @@ func main() {
 			slog.Error("failed to load GPU config", "path", gpuConfigPath, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("GPU config loaded", "path", gpuConfigPath, "resources", len(database.GPUResourceSpecs), "totalCPU", database.TotalCPU, "totalMemory", database.TotalMemory)
+		cfg := database.GetGPUConfig()
+		slog.Info("GPU config loaded", "path", gpuConfigPath, "resources", len(cfg.Resources), "totalCPU", cfg.TotalCPU, "totalMemory", cfg.TotalMemory)
 	} else {
 		slog.Info("GPU config file not found, using built-in defaults", "path", gpuConfigPath)
 	}
@@ -83,8 +93,9 @@ func main() {
 	defer database.Close()
 	slog.Info("database initialized", "path", dbPath)
 
-	// Init Kubernetes client and sync loops
+	// Init Kubernetes client, GPU discovery, and sync loops
 	kube.InitK8sClient()
+	kube.InitDiscovery()
 	kube.InitKueueSync()
 	kube.InitReservationSync()
 
@@ -116,6 +127,7 @@ func main() {
 	apiRouter.HandleFunc("/admin", api.AdminListBookings).Methods("GET")
 	apiRouter.HandleFunc("/admin", api.AdminDeleteBooking).Methods("DELETE")
 	apiRouter.HandleFunc("/admin/reservations", api.AdminReservationToggleHandler).Methods("POST")
+	apiRouter.HandleFunc("/admin/discover", api.AdminDiscoverGPUHandler).Methods("POST")
 	apiRouter.HandleFunc("/admin/database/export", api.AdminExportDatabase).Methods("GET")
 	apiRouter.HandleFunc("/admin/database/import", api.AdminImportDatabase).Methods("POST")
 

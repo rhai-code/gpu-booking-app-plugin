@@ -8,10 +8,10 @@ An OpenShift Console Dynamic Plugin for booking and managing shared GPU resource
 
 - **OpenShift Console integration** - runs as a dynamic plugin inside the OpenShift web console (admin perspective)
 - **Interactive calendar** with day/multi-day/hour-range bookings, Ctrl+click multi-select, Shift+click ranges, and right-click context menu
-- **GPU resource types** - full H200 GPUs and MIG partitions (3g.71gb, 2g.35gb, 1g.18gb)
+- **GPU auto-discovery** - automatically detects GPU types, MIG partitions, and cluster capacity from Kubernetes node labels and allocatable resources
 - **Kueue integration** - automatically syncs LocalQueue GPU usage as "consumed" bookings; user reservations take priority and trigger workload preemption
 - **Reservation system** - creates per-user ClusterQueues with protected `nominalQuota`, ensuring reserved workloads cannot be preempted by unreserved ones
-- **Admin dashboard** - sortable/filterable bookings table, runtime reservation sync toggle, database export/import
+- **Admin dashboard** - sortable/filterable bookings table, runtime reservation sync toggle, on-demand GPU discovery, database export/import
 - **Built-in help** - 8-page markdown documentation with sidebar navigation
 - **OpenShift auth** - authentication via console `UserToken` proxy and Kubernetes TokenReview/SubjectAccessReview
 
@@ -39,6 +39,7 @@ An OpenShift Console Dynamic Plugin for booking and managing shared GPU resource
   │  ├── Auth (TokenReview + SubjectAccessReview)        │
   │  ├── Booking API (CRUD, bulk, conflict resolution)   │
   │  ├── Admin API (list, delete, export/import DB)      │
+  │  ├── GPU Discovery (5m - auto-detect from nodes)      │
   │  ├── Kueue Sync (30s - consumed bookings)            │
   │  ├── Reservation Sync (10m - K8s resources)          │
   │  └── Static Assets (plugin dist/)                    │
@@ -93,6 +94,8 @@ The backend runs on `:9443` and the webpack dev server on `:9001` (proxying API 
 | `KUEUE_SYNC_ENABLED` | `true` | Enable LocalQueue watcher |
 | `KUEUE_SYNC_INTERVAL` | `30` | Kueue poll interval in seconds |
 | `KUEUE_BOOKING_DAYS` | `7` | Days to book ahead for consumed slots |
+| `GPU_DISCOVERY_ENABLED` | `true` | Auto-discover GPUs from cluster nodes |
+| `GPU_DISCOVERY_INTERVAL` | `300` | Discovery interval in seconds |
 
 ## Deployment
 
@@ -166,6 +169,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full quota flow, preemption model
 | `GET` | `/api/admin` | admin | All bookings (admin only) |
 | `DELETE` | `/api/admin?id=<id>` | admin | Delete any booking |
 | `POST` | `/api/admin/reservations` | admin | Toggle reservation sync |
+| `POST` | `/api/admin/discover` | admin | Trigger GPU auto-discovery |
 | `GET` | `/api/admin/database/export` | admin | Download database as JSON |
 | `POST` | `/api/admin/database/import` | admin | Restore database from JSON |
 | `GET` | `/api/health` | none | Health check |

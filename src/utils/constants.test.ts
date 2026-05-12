@@ -11,6 +11,7 @@ import {
   isPastDate,
   buildGpuEquivalentMap,
   totalGpuEquivalents,
+  getResourceColor,
   FALLBACK_GPU_RESOURCES,
 } from './constants';
 
@@ -131,9 +132,6 @@ describe('buildGpuEquivalentMap', () => {
   it('maps resource type to GPU equivalent', () => {
     const map = buildGpuEquivalentMap(FALLBACK_GPU_RESOURCES);
     expect(map['nvidia.com/gpu']).toBe(1.0);
-    expect(map['nvidia.com/mig-3g.71gb']).toBe(0.5);
-    expect(map['nvidia.com/mig-2g.35gb']).toBe(0.25);
-    expect(map['nvidia.com/mig-1g.18gb']).toBe(0.125);
   });
 
   it('returns empty map for empty input', () => {
@@ -144,8 +142,8 @@ describe('buildGpuEquivalentMap', () => {
 
 describe('totalGpuEquivalents', () => {
   it('sums count * gpuEquivalent for all resources', () => {
-    // 8*1.0 + 8*0.5 + 8*0.25 + 16*0.125 = 8 + 4 + 2 + 2 = 16
-    expect(totalGpuEquivalents(FALLBACK_GPU_RESOURCES)).toBe(16);
+    // 8*1.0 = 8
+    expect(totalGpuEquivalents(FALLBACK_GPU_RESOURCES)).toBe(8);
   });
 
   it('returns 0 for empty input', () => {
@@ -154,6 +152,29 @@ describe('totalGpuEquivalents', () => {
 
   it('calculates for single resource', () => {
     expect(totalGpuEquivalents([{ name: 'X', type: 'x', count: 4, share: 0.1, gpuEquivalent: 0.5 }])).toBe(2);
+  });
+});
+
+describe('getResourceColor', () => {
+  it('returns known color for nvidia.com/gpu', () => {
+    expect(getResourceColor('nvidia.com/gpu')).toBe('#0066CC');
+  });
+
+  it('returns consistent color for unknown resource type', () => {
+    const color1 = getResourceColor('custom.io/accelerator');
+    const color2 = getResourceColor('custom.io/accelerator');
+    expect(color1).toBe(color2);
+  });
+
+  it('returns different colors for different unknown types', () => {
+    const a = getResourceColor('vendor.io/gpu-a');
+    const b = getResourceColor('vendor.io/gpu-b');
+    expect(a).not.toBe(b);
+  });
+
+  it('returns a valid hex color string', () => {
+    const color = getResourceColor('some.new/resource');
+    expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
   });
 });
 

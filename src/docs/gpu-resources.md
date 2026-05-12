@@ -1,19 +1,35 @@
 # GPU Resources
 
-<span class="badge">Topics: H200, MIG, Partitioning</span>
+<span class="badge">Topics: GPU Types, MIG, Auto-Discovery</span>
+
+---
+
+## Auto-Discovery
+
+The booking app automatically discovers GPU resources from the cluster by querying Kubernetes node labels and allocatable resources. When GPU nodes are present, the app detects:
+
+- **GPU product name** and memory from node labels (`nvidia.com/gpu.product`, `nvidia.com/gpu.memory`)
+- **Full GPU count** from node allocatable resources (`nvidia.com/gpu`)
+- **MIG slice types and counts** from allocatable MIG resources (`nvidia.com/mig-*`)
+- **Kueue ResourceFlavor names** for reservation quota management
+- **Total CPU and memory** from GPU node allocatable capacity
+
+The configuration updates automatically every 5 minutes. Administrators can also trigger an immediate re-discovery from the [Admin Dashboard](admin) using the **Discover GPUs** button.
 
 ---
 
 ## Available Resources
 
-The booking system manages a pool of NVIDIA H200 GPUs with MIG (Multi-Instance GPU) partitioning enabled. You can book either a full GPU or a smaller MIG partition depending on your workload needs.
+The resource cards at the top of the booking page show all GPU types discovered in your cluster. The exact types, counts, and names depend on your cluster's GPU hardware and MIG configuration.
 
-| Resource | Type | Units | Use case |
-|----------|------|-------|----------|
-| **H200 Full GPU** | `nvidia.com/gpu` | 8 | Large model training, full GPU inference |
-| **MIG 3g.71gb** | `nvidia.com/mig-3g.71gb` | 8 | Medium model fine-tuning, large inference |
-| **MIG 2g.35gb** | `nvidia.com/mig-2g.35gb` | 8 | Small model training, inference workloads |
-| **MIG 1g.18gb** | `nvidia.com/mig-1g.18gb` | 16 | Notebooks, small experiments, development |
+Common resource types include:
+
+| Resource Type | Example | Use case |
+|---------------|---------|----------|
+| **Full GPU** | `nvidia.com/gpu` | Large model training, full GPU inference |
+| **Large MIG** | `nvidia.com/mig-3g.40gb` | Medium model fine-tuning, large inference |
+| **Medium MIG** | `nvidia.com/mig-2g.20gb` | Small model training, inference workloads |
+| **Small MIG** | `nvidia.com/mig-1g.10gb` | Notebooks, small experiments, development |
 
 ![images/gpu-resources.png](images/gpu-resources.png)
 
@@ -23,36 +39,23 @@ The booking system manages a pool of NVIDIA H200 GPUs with MIG (Multi-Instance G
 
 Multi-Instance GPU (MIG) lets a single physical GPU be partitioned into multiple isolated instances. Each instance has its own compute, memory, and memory bandwidth -- they behave like independent smaller GPUs.
 
-### MIG partition sizes
-
-The H200 supports the following partition layout:
-
-```
-H200 GPU (80GB HBM3)
-├── 3g.71gb  (3 compute slices, 71GB memory)  x8
-├── 2g.35gb  (2 compute slices, 35GB memory)  x8
-└── 1g.18gb  (1 compute slice,  18GB memory)  x16
-```
+MIG is supported on NVIDIA A100, H100, H200, B200, and GB200 GPUs. GPUs like the L40S and T4 do not support MIG and will only show as full GPU resources.
 
 ### GPU equivalents
 
-Each resource type has a GPU equivalent weight used for capacity planning:
+Each resource type has a GPU equivalent weight used for capacity planning. The weight is calculated automatically based on the ratio of MIG slice memory to full GPU memory:
 
-| Resource | GPU Equivalent |
-|----------|---------------|
-| H200 Full GPU | 1.0 |
-| MIG 3g.71gb | 0.5 |
-| MIG 2g.35gb | 0.25 |
-| MIG 1g.18gb | 0.125 |
+- **Full GPU** = 1.0
+- **MIG slices** = slice_memory / full_gpu_memory
 
 The calendar badges and booking modal show GPU equivalent totals to help you understand the overall capacity impact of your bookings.
 
 ### Choosing the right resource
 
-- **Full GPU** -- use when your workload needs the full 80GB memory or all compute cores (e.g., training large models, multi-GPU distributed training)
-- **MIG 3g.71gb** -- good for most single-GPU training and large inference workloads
-- **MIG 2g.35gb** -- suitable for smaller model fine-tuning and inference
-- **MIG 1g.18gb** -- ideal for Jupyter notebooks, development, small experiments, and inference of quantised models
+- **Full GPU** -- use when your workload needs the full GPU memory or all compute cores (e.g., training large models, multi-GPU distributed training)
+- **Large MIG** -- good for most single-GPU training and large inference workloads
+- **Medium MIG** -- suitable for smaller model fine-tuning and inference
+- **Small MIG** -- ideal for Jupyter notebooks, development, small experiments, and inference of quantised models
 
 <div class="alert alert-info">
   <strong>Tip</strong>
@@ -63,7 +66,7 @@ The calendar badges and booking modal show GPU equivalent totals to help you und
 
 ## Resource Selector
 
-Switch between resource types using the four cards in the header.
+Switch between resource types using the cards in the header.
 
 ![images/resource-selector-detail.png](images/resource-selector-detail.png)
 
@@ -81,7 +84,7 @@ When multiple resources are selected, the booking grid shows a separate table fo
 
 ### Default selection
 
-The app starts with **H200 Full GPU** selected. You can Ctrl+click to add MIG resources alongside it.
+The app starts with the first discovered GPU type selected. You can Ctrl+click to add additional resources alongside it.
 
 ---
 

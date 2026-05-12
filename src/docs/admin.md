@@ -19,6 +19,7 @@ Admin access is determined by OpenShift RBAC -- users with the `gpubooking.opens
 The controls card at the top of the page provides:
 
 - **Reservation Sync toggle** -- ON/OFF switch to enable or disable Kueue reservation sync at runtime without redeploying
+- **Discover GPUs** -- trigger an immediate GPU auto-discovery from the cluster, updating resource types, counts, and capacity without restarting the pod
 - **Export DB** -- download the current SQLite database as a backup
 - **Import DB** -- upload a replacement database file (choose file, then click Import)
 - **Delete All** -- remove all bookings with confirmation
@@ -80,7 +81,7 @@ The main table lists all bookings with sortable columns:
 |--------|-------------|
 | **ID** | Unique booking identifier (deterministic for Kueue bookings, random for user bookings) |
 | **User** | The booking owner (OpenShift username or namespace name for Kueue bookings) |
-| **Resource** | GPU resource type (e.g. `nvidia.com/gpu`, `nvidia.com/mig-1g.18gb`) |
+| **Resource** | GPU resource type (e.g. `nvidia.com/gpu`, `nvidia.com/mig-*`) |
 | **Slot** | Slot index (0-based) |
 | **Date** | Booking date (YYYY-MM-DD) |
 | **Source** | `reserved` (user) or `consumed` (Kueue), colour-coded |

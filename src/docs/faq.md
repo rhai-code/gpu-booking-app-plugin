@@ -123,6 +123,10 @@ When you have multiple bookings on the same day, the reservation lasts until the
 
 See [GPU Resources](gpu-resources) for a detailed breakdown of the available MIG partition sizes and guidance on choosing the right one for your workload.
 
+### The resource types changed after a cluster update
+
+The app auto-discovers GPU resources from the cluster every 5 minutes. If the cluster's GPU hardware or MIG configuration changes (e.g., switching from H100 to L40S, or enabling/disabling MIG), the resource cards will update automatically. An administrator can also trigger immediate re-discovery from the admin dashboard using the **Discover GPUs** button.
+
 ---
 
 ## Next Steps

@@ -135,6 +135,10 @@ export const adminToggleReservationSync = (enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   });
 
+// GPU Discovery
+export const adminTriggerDiscovery = () =>
+  request<{ status: string; resources: GPUResource[]; totalCpu: number; totalMemory: number; flavorName: string }>('/admin/discover', { method: 'POST' });
+
 // Database export/import
 export async function adminExportDatabase(): Promise<void> {
   const resp = await fetch(`${PROXY_BASE}/admin/database/export`, {

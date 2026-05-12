@@ -214,6 +214,10 @@ func getActiveReservationsAt(now time.Time) ([]userReservation, error) {
 	var reservations []userReservation
 	for user, resourceSlots := range userMap {
 		resources := map[string]int{}
+		cfg := database.GetGPUConfig()
+		for _, spec := range cfg.Resources {
+			resources[spec.Type] = 0
+		}
 		for resource, slots := range resourceSlots {
 			resources[resource] = len(slots)
 		}
@@ -230,9 +234,18 @@ func getActiveReservationsAt(now time.Time) ([]userReservation, error) {
 			if !ok {
 				continue
 			}
+			cfg := database.GetGPUConfig()
 			share := float64(count) * spec.Share
-			res.CPU += int(math.Floor(share * float64(database.TotalCPU)))
-			res.Memory += int(math.Floor(share * float64(database.TotalMemory)))
+			cpu := int(math.Ceil(share * float64(cfg.TotalCPU)))
+			if cpu < 2 {
+				cpu = 2
+			}
+			mem := int(math.Ceil(share * float64(cfg.TotalMemory)))
+			if mem < 8 {
+				mem = 8
+			}
+			res.CPU += cpu
+			res.Memory += mem
 		}
 		reservations = append(reservations, res)
 	}
@@ -263,10 +276,12 @@ func applyUserReservation(res userReservation) error {
 		{"name": "cpu", "nominalQuota": strconv.Itoa(res.CPU)},
 		{"name": "memory", "nominalQuota": fmt.Sprintf("%dGi", res.Memory)},
 	}
-	for gpuRes, count := range res.Resources {
-		coveredResources = append(coveredResources, gpuRes)
+	cfg := database.GetGPUConfig()
+	for _, spec := range cfg.Resources {
+		coveredResources = append(coveredResources, spec.Type)
+		count := res.Resources[spec.Type]
 		quotaResources = append(quotaResources, map[string]any{
-			"name": gpuRes, "nominalQuota": strconv.Itoa(count),
+			"name": spec.Type, "nominalQuota": strconv.Itoa(count),
 		})
 	}
 
@@ -304,7 +319,7 @@ func applyUserReservation(res userReservation) error {
 					"coveredResources": coveredResources,
 					"flavors": []map[string]any{
 						{
-							"name":      "h200",
+							"name":      database.FlavorName(),
 							"resources": quotaResources,
 						},
 					},
@@ -342,6 +357,9 @@ func applyUserReservation(res userReservation) error {
 		normalized := normalizedResourceID(gpuRes)
 		profileName := "reserved-" + normalized
 
+		defaultCPU := min(2, res.CPU)
+		defaultMemGi := min(8, res.Memory)
+
 		identifiers := []map[string]any{
 			{
 				"identifier":   "cpu",
@@ -349,7 +367,7 @@ func applyUserReservation(res userReservation) error {
 				"resourceType": "CPU",
 				"minCount":     1,
 				"maxCount":     res.CPU,
-				"defaultCount": 2,
+				"defaultCount": defaultCPU,
 			},
 			{
 				"identifier":   "memory",
@@ -357,7 +375,7 @@ func applyUserReservation(res userReservation) error {
 				"resourceType": "Memory",
 				"minCount":     "2Gi",
 				"maxCount":     fmt.Sprintf("%dGi", res.Memory),
-				"defaultCount": "8Gi",
+				"defaultCount": fmt.Sprintf("%dGi", defaultMemGi),
 			},
 			{
 				"identifier":   gpuRes,
@@ -410,10 +428,11 @@ func applyUserReservation(res userReservation) error {
 }
 
 func applyCohortRemaining(reservations []userReservation) error {
-	remainingCPU := database.TotalCPU
-	remainingMem := database.TotalMemory
+	cfg := database.GetGPUConfig()
+	remainingCPU := cfg.TotalCPU
+	remainingMem := cfg.TotalMemory
 	remainingGPUs := map[string]int{}
-	for _, spec := range database.GPUResourceSpecs {
+	for _, spec := range cfg.Resources {
 		remainingGPUs[spec.Type] = spec.Count
 	}
 
@@ -449,7 +468,7 @@ func applyCohortRemaining(reservations []userReservation) error {
 					"coveredResources": coveredResources,
 					"flavors": []map[string]any{
 						{
-							"name":      "h200",
+							"name":      database.FlavorName(),
 							"resources": quotaResources,
 						},
 					},

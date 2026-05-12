@@ -6,7 +6,7 @@
 
 ## Introduction
 
-The GPU Booking app lets you reserve H200 GPU resources for your AI/ML workloads on OpenShift. You can book full GPUs or smaller MIG (Multi-Instance GPU) partitions for specific hours, full days, or multiple days ahead.
+The GPU Booking app lets you reserve GPU resources for your AI/ML workloads on OpenShift. The app automatically discovers available GPUs in the cluster -- you can book full GPUs or smaller MIG (Multi-Instance GPU) partitions for specific hours, full days, or multiple days ahead.
 
 ### What you can do
 
@@ -51,7 +51,7 @@ The dark header bar at the top shows:
 
 ### Resource Selector
 
-Below the header, four GPU resource cards let you choose which resource types to display. Click a card to select it exclusively, or **Ctrl+click** to multi-select multiple resource types. When multiple resources are selected, a separate booking grid is shown for each.
+Below the header, GPU resource cards let you choose which resource types to display. The cards are populated automatically from the cluster's discovered GPU configuration. Click a card to select it exclusively, or **Ctrl+click** to multi-select multiple resource types. When multiple resources are selected, a separate booking grid is shown for each.
 
 ![images/resource-selector.png](images/resource-selector.png)
 
