@@ -429,6 +429,9 @@ func applyUserReservation(res userReservation) error {
 
 func applyCohortRemaining(reservations []userReservation) error {
 	cfg := database.GetGPUConfig()
+	if len(cfg.Resources) == 0 {
+		return nil
+	}
 	remainingCPU := cfg.TotalCPU
 	remainingMem := cfg.TotalMemory
 	remainingGPUs := map[string]int{}
