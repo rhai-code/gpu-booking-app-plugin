@@ -129,6 +129,9 @@ export const adminDeleteBooking = (id: string) =>
 export const adminDeleteAllBookings = () =>
   request<{ status: string; count: number }>('/admin', { method: 'DELETE' });
 
+export const adminDeleteOldBookings = (before: string) =>
+  request<{ status: string; count: number }>(`/admin?before=${encodeURIComponent(before)}`, { method: 'DELETE' });
+
 export const adminToggleReservationSync = (enabled: boolean) =>
   request<{ reservationSyncEnabled: boolean }>('/admin/reservations', {
     method: 'POST',

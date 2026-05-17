@@ -22,6 +22,7 @@ The controls card at the top of the page provides:
 - **Discover GPUs** -- trigger an immediate GPU auto-discovery from the cluster, updating resource types, counts, and capacity without restarting the pod
 - **Export DB** -- download the current SQLite database as a backup
 - **Import DB** -- upload a replacement database file (choose file, then click Import)
+- **Delete All Old** -- remove all bookings before today's date with confirmation
 - **Delete All** -- remove all bookings with confirmation
 
 ---
@@ -99,6 +100,10 @@ Click any sortable column header to sort ascending; click again to reverse.
 ### Single Booking
 
 Click the **Delete** button on any row. A confirmation prompt appears with **Confirm** and **Cancel** buttons. Admin can delete any booking, including consumed Kueue bookings.
+
+### Delete All Old
+
+Click **Delete All Old** in the controls card to remove all bookings with a date before today. A confirmation modal appears before deletion proceeds. This is useful for cleaning up expired bookings without affecting today's or future bookings. Consumed bookings that are deleted will be repopulated on the next Kueue sync cycle if the workloads are still running.
 
 ### Delete All
 

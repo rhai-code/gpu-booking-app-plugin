@@ -69,16 +69,59 @@ For the full architecture details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Local Development
 
+Full openshift console development commands.
+
 ```bash
-# Install frontend dependencies
+# Install frontend dependencies for the plugin
 yarn install
 
 # Start the backend (with Kueue sync disabled for local dev)
-cd cmd/plugin
-KUEUE_SYNC_ENABLED=false DB_PATH=./bookings.db go run .
+cd cmd/backend
+DEV_MODE=true KUEUE_SYNC_ENABLED=false DB_PATH=./bookings.db go run .
 
-# Start the frontend dev server (in another terminal)
-yarn dev
+# Start the plugin frontend dev server (in another terminal)
+yarn start
+
+# you need a matching openshift-console build
+cd ~/git/openshift-console
+git checkout release-4.21
+go build -o ./bin/bridge ./cmd/bridge/
+cd ~/git/openshift-console/frontend
+yarn install && yarn build
+
+# create a local oauth client
+oc create -f - <<'EOF'
+apiVersion: oauth.openshift.io/v1
+kind: OAuthClient
+metadata:
+  name: console-oauth-client
+grantMethod: auto
+redirectURIs:
+  - http://localhost:9000/auth/callback
+secret: console-secret-123
+EOF
+
+# unauth access
+cd ~/git/openshift-console
+source ./contrib/oc-environment.sh
+./bin/bridge -plugins gpu-booking-plugin=http://localhost:9001/ -i18n-namespaces=plugin__gpu-booking-plugin
+
+# for auth you need to run the bridge cmd directly with proxy
+./bin/bridge \
+  --base-address=http://localhost:9000 \
+  --k8s-mode=off-cluster \
+  --k8s-mode-off-cluster-skip-verify-tls=true \
+  --listen=http://0.0.0.0:9000 \
+  --public-dir=./frontend/public/dist \
+  -plugins gpu-booking-plugin=http://localhost:9001/ \
+  -i18n-namespaces=plugin__gpu-booking-plugin \
+  --plugin-proxy='{"services":[{"consolePluginName":"gpu-booking-plugin","endpoint":"http://localhost:9443","authorize":true,"consoleAPIPath":"/api/proxy/plugin/gpu-booking-plugin/backend/"}]}' \
+  --user-auth=openshift \
+  --user-auth-oidc-client-id=console-oauth-client \
+  --user-auth-oidc-client-secret=console-secret-123
+
+# login
+http://localhost:9000
 ```
 
 The backend runs on `:9443` and the webpack dev server on `:9001` (proxying API calls to the backend).
@@ -168,6 +211,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full quota flow, preemption model
 | `DELETE` | `/api/bookings?id=<id>` | user | Cancel own booking |
 | `GET` | `/api/admin` | admin | All bookings (admin only) |
 | `DELETE` | `/api/admin?id=<id>` | admin | Delete any booking |
+| `DELETE` | `/api/admin?before=<YYYY-MM-DD>` | admin | Delete all bookings before date |
 | `POST` | `/api/admin/reservations` | admin | Toggle reservation sync |
 | `POST` | `/api/admin/discover` | admin | Trigger GPU auto-discovery |
 | `GET` | `/api/admin/database/export` | admin | Download database as JSON |

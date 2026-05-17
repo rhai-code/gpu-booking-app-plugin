@@ -40,13 +40,14 @@ import {
   adminGetBookings,
   adminDeleteBooking,
   adminDeleteAllBookings,
+  adminDeleteOldBookings,
   adminToggleReservationSync,
   adminExportDatabase,
   adminImportDatabase,
   adminTriggerDiscovery,
   AdminResponse,
 } from '../utils/api';
-import { GPUResource, FALLBACK_GPU_RESOURCES } from '../utils/constants';
+import { GPUResource, FALLBACK_GPU_RESOURCES, todayStr } from '../utils/constants';
 import ResourceSelector from './ResourceSelector';
 
 type SortKey = 'id' | 'user' | 'resource' | 'slotIndex' | 'date' | 'source' | 'createdAt';
@@ -61,6 +62,7 @@ const AdminPage: React.FC = () => {
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
   const [showDeleteAll, setShowDeleteAll] = React.useState(false);
+  const [showDeleteOld, setShowDeleteOld] = React.useState(false);
   const [importFile, setImportFile] = React.useState<File | null>(null);
   const [importFilename, setImportFilename] = React.useState('');
   const [discovering, setDiscovering] = React.useState(false);
@@ -120,6 +122,16 @@ const AdminPage: React.FC = () => {
       await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete all failed');
+    }
+  };
+
+  const handleDeleteOld = async () => {
+    try {
+      await adminDeleteOldBookings(todayStr());
+      setShowDeleteOld(false);
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete old bookings failed');
     }
   };
 
@@ -290,6 +302,11 @@ const AdminPage: React.FC = () => {
                 )}
                 <SplitItem isFilled />
                 <SplitItem>
+                  <Button variant="warning" icon={<TrashIcon />} onClick={() => setShowDeleteOld(true)}>
+                    Delete All Old
+                  </Button>
+                </SplitItem>
+                <SplitItem>
                   <Button variant="danger" icon={<TrashIcon />} onClick={() => setShowDeleteAll(true)}>
                     Delete All
                   </Button>
@@ -435,6 +452,26 @@ const AdminPage: React.FC = () => {
               Delete All
             </Button>
             <Button variant="link" onClick={() => setShowDeleteAll(false)}>
+              Cancel
+            </Button>
+          </ModalFooter>
+        </Modal>
+
+        {/* Delete All Old confirmation modal */}
+        <Modal
+          variant={ModalVariant.small}
+          isOpen={showDeleteOld}
+          onClose={() => setShowDeleteOld(false)}
+        >
+          <ModalHeader title="Delete All Old Bookings" />
+          <ModalBody>
+            Are you sure you want to delete all bookings before today's date? This action cannot be undone.
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="warning" onClick={handleDeleteOld}>
+              Delete All Old
+            </Button>
+            <Button variant="link" onClick={() => setShowDeleteOld(false)}>
               Cancel
             </Button>
           </ModalFooter>

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/eformat/gpu-booking-plugin/pkg/database"
 	"github.com/eformat/gpu-booking-plugin/pkg/kube"
@@ -109,6 +110,25 @@ func AdminDeleteBooking(w http.ResponseWriter, r *http.Request) {
 
 	db := database.DB()
 	id := r.URL.Query().Get("id")
+	before := r.URL.Query().Get("before")
+
+	// Delete bookings before a given date
+	if before != "" {
+		if _, err := time.Parse("2006-01-02", before); err != nil {
+			HttpError(w, http.StatusBadRequest, "invalid_date")
+			return
+		}
+		result, err := db.ExecContext(ctx, "DELETE FROM bookings WHERE date < ?", before)
+		if err != nil {
+			HttpError(w, http.StatusInternalServerError, "database_error")
+			return
+		}
+		rows, _ := result.RowsAffected()
+		slog.Info("AUDIT: admin delete old bookings", "user", user.Username, "before", before, "deleted_count", rows, "remote_addr", r.RemoteAddr)
+		JsonResponse(w, map[string]any{"status": "deleted", "count": rows})
+		kube.TriggerSyncReservations()
+		return
+	}
 
 	// Delete all bookings when no id (admin bulk delete)
 	if id == "" {
