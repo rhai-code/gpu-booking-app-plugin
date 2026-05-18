@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -371,12 +372,79 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 		g.usages = append(g.usages, u)
 	}
 
-	for _, group := range byResource {
-		slotOffset := 0
+	for resource, group := range byResource {
+		sort.Slice(group.usages, func(i, j int) bool {
+			return group.usages[i].Namespace < group.usages[j].Namespace
+		})
+
+		// Build set of slots occupied by reserved bookings (per date) and count per user
+		reservedSlots := map[string]map[int]bool{}   // date -> set of slot indices
+		userReserved := map[string]map[string]int{}   // date -> user -> count of reserved slots
+		for _, date := range dates {
+			reserved := map[int]bool{}
+			perUser := map[string]int{}
+			rows, err := db.Query(
+				"SELECT slot_index, user FROM bookings WHERE resource = ? AND date = ? AND source = ?",
+				resource, date, database.SourceReserved,
+			)
+			if err == nil {
+				for rows.Next() {
+					var idx int
+					var u string
+					if rows.Scan(&idx, &u) == nil {
+						reserved[idx] = true
+						perUser[u]++
+					}
+				}
+				rows.Close()
+			}
+			reservedSlots[date] = reserved
+			userReserved[date] = perUser
+		}
+
+		// Assign consumed bookings to first available slot, skipping units already covered by reservations
+		consumedSlots := map[string]map[int]bool{}
+		for _, date := range dates {
+			consumedSlots[date] = map[int]bool{}
+		}
+
 		for _, u := range group.usages {
+			// Subtract reserved slots from consumed count (reservations already account for those units)
 			for i := 0; i < u.Count; i++ {
-				slotIdx := slotOffset + i
+				// Check if this unit is already covered by a reservation on any date
+				coveredByReservation := false
 				for _, date := range dates {
+					if userReserved[date][u.User] > 0 {
+						coveredByReservation = true
+					}
+				}
+				if coveredByReservation {
+					for _, date := range dates {
+						if userReserved[date][u.User] > 0 {
+							userReserved[date][u.User]--
+						}
+					}
+					continue
+				}
+
+				// Find the first slot free across ALL dates
+				slotIdx := 0
+				for {
+					free := true
+					for _, date := range dates {
+						if reservedSlots[date][slotIdx] || consumedSlots[date][slotIdx] {
+							free = false
+							break
+						}
+					}
+					if free {
+						break
+					}
+					slotIdx++
+				}
+
+				for _, date := range dates {
+					consumedSlots[date][slotIdx] = true
 					id := kueueBookingID(u.Namespace, u.Resource, slotIdx, date)
 					desired[id] = bookingKey{
 						resource:  u.Resource,
@@ -387,7 +455,6 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 					desiredMeta[id] = u.User
 				}
 			}
-			slotOffset += u.Count
 		}
 	}
 
@@ -433,16 +500,13 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 		user := desiredMeta[id]
 		createdAt := time.Now().UTC().Format(time.RFC3339)
 
-		var count int
+		// Check if a reserved booking occupies this slot
+		var reservedUser string
 		err := db.QueryRow(
-			"SELECT COUNT(*) FROM bookings WHERE resource = ? AND slot_index = ? AND date = ? AND slot_type IN (?, ?) AND source = ?",
+			"SELECT user FROM bookings WHERE resource = ? AND slot_index = ? AND date = ? AND slot_type IN (?, ?) AND source = ?",
 			key.resource, key.slotIndex, key.date, database.SlotTypeFull, key.slotType, database.SourceReserved,
-		).Scan(&count)
-		if err != nil {
-			slog.Error("kueue sync: conflict check failed", "bookingId", id, "error", err)
-			continue
-		}
-		if count > 0 {
+		).Scan(&reservedUser)
+		if err == nil {
 			skipped++
 			continue
 		}
