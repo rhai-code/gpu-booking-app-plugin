@@ -256,3 +256,83 @@ func TestSyncBookings_StaleBookingsRemoved(t *testing.T) {
 		t.Errorf("consumed count = %d after workload removed, want 0", consumed)
 	}
 }
+
+func TestSyncBookings_EmailUserMatchesReservation(t *testing.T) {
+	setupTestDB(t)
+	dates := []string{"2026-06-01"}
+
+	// ltsai@redhat.com reserves slot 0 (via OpenShift UI)
+	insertBooking(t, "res-1", "ltsai@redhat.com", "nvidia.com/gpu", 0, "2026-06-01", 0, 24, 0)
+
+	// Kueue sync reports user as "ltsai" (from namespace label)
+	usages := []resourceUsage{
+		{Namespace: "user-ltsai", User: "ltsai", Resource: "nvidia.com/gpu", Count: 1},
+	}
+	if err := syncBookings(usages, dates); err != nil {
+		t.Fatalf("syncBookings: %v", err)
+	}
+
+	reserved := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceReserved)
+	if reserved != 1 {
+		t.Errorf("reserved count = %d, want 1", reserved)
+	}
+
+	// Consumed booking should NOT be created — reservation covers it
+	consumed := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	if consumed != 0 {
+		t.Errorf("consumed count = %d, want 0 (reservation should cover it)", consumed)
+	}
+}
+
+func TestSyncBookings_EmailUserPartialCoverage(t *testing.T) {
+	setupTestDB(t)
+	dates := []string{"2026-06-01"}
+
+	// ltsai@redhat.com reserves 2 slots
+	insertBooking(t, "res-1", "ltsai@redhat.com", "nvidia.com/gpu", 0, "2026-06-01", 0, 24, 0)
+	insertBooking(t, "res-2", "ltsai@redhat.com", "nvidia.com/gpu", 1, "2026-06-01", 0, 24, 0)
+
+	// Kueue reports 4 consumed units as "ltsai"
+	usages := []resourceUsage{
+		{Namespace: "user-ltsai", User: "ltsai", Resource: "nvidia.com/gpu", Count: 4},
+	}
+	if err := syncBookings(usages, dates); err != nil {
+		t.Fatalf("syncBookings: %v", err)
+	}
+
+	reserved := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceReserved)
+	if reserved != 2 {
+		t.Errorf("reserved count = %d, want 2", reserved)
+	}
+
+	// Only 2 consumed bookings should be created (4 total - 2 covered by reservations)
+	consumed := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	if consumed != 2 {
+		t.Errorf("consumed count = %d, want 2", consumed)
+	}
+
+	// Consumed slots should not overlap with reserved slots 0,1
+	slots := getBookingSlots(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	for _, s := range slots {
+		if s == 0 || s == 1 {
+			t.Errorf("consumed slot %d overlaps with reserved slot", s)
+		}
+	}
+}
+
+func TestNormalizeUser(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"ltsai@redhat.com", "ltsai"},
+		{"alice", "alice"},
+		{"bob@example.org", "bob"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		got := normalizeUser(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizeUser(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}

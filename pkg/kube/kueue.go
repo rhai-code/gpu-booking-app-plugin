@@ -379,7 +379,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 
 		// Build set of slots occupied by reserved bookings (per date) and count per user
 		reservedSlots := map[string]map[int]bool{}   // date -> set of slot indices
-		userReserved := map[string]map[string]int{}   // date -> user -> count of reserved slots
+		userReserved := map[string]map[string]int{}   // date -> normalised user -> count of reserved slots
 		for _, date := range dates {
 			reserved := map[int]bool{}
 			perUser := map[string]int{}
@@ -393,7 +393,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 					var u string
 					if rows.Scan(&idx, &u) == nil {
 						reserved[idx] = true
-						perUser[u]++
+						perUser[normalizeUser(u)]++
 					}
 				}
 				rows.Close()
@@ -412,16 +412,17 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 			// Subtract reserved slots from consumed count (reservations already account for those units)
 			for i := 0; i < u.Count; i++ {
 				// Check if this unit is already covered by a reservation on any date
+				normalUser := normalizeUser(u.User)
 				coveredByReservation := false
 				for _, date := range dates {
-					if userReserved[date][u.User] > 0 {
+					if userReserved[date][normalUser] > 0 {
 						coveredByReservation = true
 					}
 				}
 				if coveredByReservation {
 					for _, date := range dates {
-						if userReserved[date][u.User] > 0 {
-							userReserved[date][u.User]--
+						if userReserved[date][normalUser] > 0 {
+							userReserved[date][normalUser]--
 						}
 					}
 					continue
@@ -613,6 +614,13 @@ func ListPreemptedWorkloads() ([]PreemptedWorkload, error) {
 	}
 
 	return result, nil
+}
+
+func normalizeUser(u string) string {
+	if i := strings.Index(u, "@"); i >= 0 {
+		return u[:i]
+	}
+	return u
 }
 
 func kueueBookingID(namespace, resource string, slotIndex int, date string) string {
