@@ -85,6 +85,8 @@ const AdminPage: React.FC = () => {
         source: serverSource || undefined,
         resource: serverResource || undefined,
         search: filter || undefined,
+        sort: sortKey,
+        sortDir: sortDir,
       });
       setData(result);
       if (result.config?.resources?.length > 0) {
@@ -95,7 +97,7 @@ const AdminPage: React.FC = () => {
       setError(e instanceof Error ? e.message : 'Failed to load admin data');
     }
     setLoading(false);
-  }, [page, perPage, serverSource, serverResource, filter]);
+  }, [page, perPage, serverSource, serverResource, filter, sortKey, sortDir]);
 
   React.useEffect(() => {
     if (!authLoading && isAdmin) {
@@ -208,14 +210,6 @@ const AdminPage: React.FC = () => {
     return true;
   });
 
-  // Sort
-  const sorted = [...filtered].sort((a, b) => {
-    const aVal = a[sortKey] as string | number;
-    const bVal = b[sortKey] as string | number;
-    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-    return sortDir === 'asc' ? cmp : -cmp;
-  });
-
   const getSortParams = (key: SortKey): ThProps['sort'] => ({
     sortBy: {
       index: ['id', 'user', 'resource', 'slotIndex', 'date', 'source', 'createdAt'].indexOf(sortKey),
@@ -224,6 +218,7 @@ const AdminPage: React.FC = () => {
     onSort: (_e, _index, direction) => {
       setSortKey(key);
       setSortDir(direction);
+      setPage(1);
     },
     columnIndex: ['id', 'user', 'resource', 'slotIndex', 'date', 'source', 'createdAt'].indexOf(key),
   });
@@ -360,7 +355,7 @@ const AdminPage: React.FC = () => {
               </ToolbarItem>
               <ToolbarItem>
                 <span style={{ fontSize: '14px', color: 'var(--pf-t--global--text--color--regular)', opacity: 0.7 }}>
-                  {sorted.length} of {data?.total ?? 0} bookings
+                  {filtered.length} of {data?.total ?? 0} bookings
                 </span>
               </ToolbarItem>
             </ToolbarContent>
@@ -381,7 +376,7 @@ const AdminPage: React.FC = () => {
               </Tr>
             </Thead>
             <Tbody>
-              {sorted.map((b) => (
+              {filtered.map((b) => (
                 <Tr key={b.id}>
                   <Td style={{ fontSize: '12px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {b.id}

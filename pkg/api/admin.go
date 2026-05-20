@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -68,8 +69,30 @@ func AdminListBookings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Server-side sorting (whitelist column names to prevent SQL injection)
+	sortColumn := "date"
+	sortColumnMap := map[string]string{
+		"id":        "id",
+		"user":      "user",
+		"resource":  "resource",
+		"slotIndex": "slot_index",
+		"date":      "date",
+		"source":    "source",
+		"createdAt": "created_at",
+	}
+	if v := r.URL.Query().Get("sort"); v != "" {
+		if col, ok := sortColumnMap[v]; ok {
+			sortColumn = col
+		}
+	}
+	sortDirection := "ASC"
+	if v := r.URL.Query().Get("sort_dir"); v == "desc" {
+		sortDirection = "DESC"
+	}
+	orderClause := fmt.Sprintf(" ORDER BY %s %s", sortColumn, sortDirection)
+
 	queryArgs := append(args, limit, offset)
-	rows, err := db.QueryContext(ctx, "SELECT "+database.BookingColumns+" FROM bookings "+where+" ORDER BY date, slot_type LIMIT ? OFFSET ?", queryArgs...)
+	rows, err := db.QueryContext(ctx, "SELECT "+database.BookingColumns+" FROM bookings "+where+orderClause+" LIMIT ? OFFSET ?", queryArgs...)
 	if err != nil {
 		HttpError(w, http.StatusInternalServerError, "database_error")
 		return

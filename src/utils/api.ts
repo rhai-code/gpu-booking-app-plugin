@@ -113,6 +113,8 @@ export const adminGetBookings = (params: {
   source?: string;
   resource?: string;
   search?: string;
+  sort?: string;
+  sortDir?: 'asc' | 'desc';
 } = {}) => {
   const q = new URLSearchParams();
   q.set('limit', String(params.limit ?? 100));
@@ -120,6 +122,8 @@ export const adminGetBookings = (params: {
   if (params.source) q.set('source', params.source);
   if (params.resource) q.set('resource', params.resource);
   if (params.search) q.set('search', params.search);
+  if (params.sort) q.set('sort', params.sort);
+  if (params.sortDir) q.set('sort_dir', params.sortDir);
   return request<AdminResponse>(`/admin?${q.toString()}`);
 };
 

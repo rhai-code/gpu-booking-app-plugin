@@ -503,3 +503,65 @@ func TestAdminListBookingsWithOffset(t *testing.T) {
 		t.Errorf("offset = %d, want 3", resp.Offset)
 	}
 }
+
+func TestAdminListBookingsServerSort(t *testing.T) {
+	setupTestDB(t)
+	db := database.DB()
+
+	db.Exec(
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-1", "charlie", "", "nvidia.com/gpu", 0, "2026-01-01", "full", "2026-01-01T10:00:00Z", database.SourceReserved, "", 0, 24, 0,
+	)
+	db.Exec(
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-2", "alice", "", "nvidia.com/gpu", 1, "2026-03-01", "full", "2026-02-01T10:00:00Z", database.SourceReserved, "", 0, 24, 0,
+	)
+	db.Exec(
+		"INSERT INTO bookings ("+database.BookingColumns+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		"booking-3", "bob", "", "nvidia.com/gpu", 2, "2026-02-01", "full", "2026-03-01T10:00:00Z", database.SourceReserved, "", 0, 24, 0,
+	)
+
+	// Sort by date descending
+	req := httptest.NewRequest(http.MethodGet, "/admin?sort=date&sort_dir=desc", nil)
+	req = reqWithUser(req, testAdmin())
+	w := httptest.NewRecorder()
+	AdminListBookings(w, req)
+
+	var resp struct {
+		Bookings []database.Booking `json:"bookings"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Bookings) != 3 {
+		t.Fatalf("count = %d, want 3", len(resp.Bookings))
+	}
+	if resp.Bookings[0].Date != "2026-03-01" {
+		t.Errorf("first booking date = %s, want 2026-03-01", resp.Bookings[0].Date)
+	}
+	if resp.Bookings[2].Date != "2026-01-01" {
+		t.Errorf("last booking date = %s, want 2026-01-01", resp.Bookings[2].Date)
+	}
+
+	// Sort by user ascending
+	req = httptest.NewRequest(http.MethodGet, "/admin?sort=user&sort_dir=asc", nil)
+	req = reqWithUser(req, testAdmin())
+	w = httptest.NewRecorder()
+	AdminListBookings(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Bookings[0].User != "alice" {
+		t.Errorf("first user = %s, want alice", resp.Bookings[0].User)
+	}
+	if resp.Bookings[2].User != "charlie" {
+		t.Errorf("last user = %s, want charlie", resp.Bookings[2].User)
+	}
+
+	// Invalid sort key should fall back to date
+	req = httptest.NewRequest(http.MethodGet, "/admin?sort=invalid_column&sort_dir=desc", nil)
+	req = reqWithUser(req, testAdmin())
+	w = httptest.NewRecorder()
+	AdminListBookings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("invalid sort key should not error, got status %d", w.Code)
+	}
+}
