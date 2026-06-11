@@ -35,9 +35,11 @@ type k8sMetadata struct {
 }
 
 type k8sLocalQueueStatus struct {
-	ReservingWorkloads int                   `json:"reservingWorkloads"`
-	AdmittedWorkloads  int                   `json:"admittedWorkloads"`
-	FlavorUsage        []k8sFlavorUsageEntry `json:"flavorUsage"`
+	ReservingWorkloads  int                   `json:"reservingWorkloads"`
+	AdmittedWorkloads   int                   `json:"admittedWorkloads"`
+	FlavorUsage         []k8sFlavorUsageEntry `json:"flavorUsage"`
+	FlavorsReservation  []k8sFlavorUsageEntry `json:"flavorsReservation"`
+	FlavorsUsage        []k8sFlavorUsageEntry `json:"flavorsUsage"`
 }
 
 type k8sFlavorUsageEntry struct {
@@ -220,7 +222,15 @@ func kueueSync() error {
 			continue
 		}
 
-		for _, flavor := range q.Status.FlavorUsage {
+		flavors := q.Status.FlavorsReservation
+		if len(flavors) == 0 {
+			flavors = q.Status.FlavorsUsage
+		}
+		if len(flavors) == 0 {
+			flavors = q.Status.FlavorUsage
+		}
+
+		for _, flavor := range flavors {
 			for _, res := range flavor.Resources {
 				count := parseResourceCount(res.Total)
 				if count <= 0 || !database.IsGPUResource(res.Name) {
@@ -373,15 +383,22 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 	}
 
 	for resource, group := range byResource {
+		maxSlots := 0
+		if spec, ok := database.GPUSpecByType(resource); ok {
+			maxSlots = spec.Count
+		}
+
 		sort.Slice(group.usages, func(i, j int) bool {
 			return group.usages[i].Namespace < group.usages[j].Namespace
 		})
 
 		// Build set of slots occupied by reserved bookings (per date) and count per user
-		reservedSlots := map[string]map[int]bool{}   // date -> set of slot indices
-		userReserved := map[string]map[string]int{}   // date -> normalised user -> count of reserved slots
+		reservedSlots := map[string]map[int]bool{}     // date -> set of slot indices
+		reservedSlotUser := map[string]map[int]string{} // date -> slot index -> normalised user
+		userReserved := map[string]map[string]int{}     // date -> normalised user -> count of reserved slots
 		for _, date := range dates {
 			reserved := map[int]bool{}
+			slotUser := map[int]string{}
 			perUser := map[string]int{}
 			rows, err := db.Query(
 				"SELECT slot_index, user FROM bookings WHERE resource = ? AND date = ? AND source = ?",
@@ -393,12 +410,14 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 					var u string
 					if rows.Scan(&idx, &u) == nil {
 						reserved[idx] = true
+						slotUser[idx] = normalizeUser(u)
 						perUser[normalizeUser(u)]++
 					}
 				}
 				rows.Close()
 			}
 			reservedSlots[date] = reserved
+			reservedSlotUser[date] = slotUser
 			userReserved[date] = perUser
 		}
 
@@ -411,37 +430,46 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 		for _, u := range group.usages {
 			// Subtract reserved slots from consumed count (reservations already account for those units)
 			for i := 0; i < u.Count; i++ {
-				// Check if this unit is already covered by a reservation on any date
+				// Check if this unit is covered by a reservation on ALL dates
 				normalUser := normalizeUser(u.User)
-				coveredByReservation := false
+				coveredByReservation := true
 				for _, date := range dates {
-					if userReserved[date][normalUser] > 0 {
-						coveredByReservation = true
+					if userReserved[date][normalUser] <= 0 {
+						coveredByReservation = false
+						break
 					}
 				}
 				if coveredByReservation {
 					for _, date := range dates {
-						if userReserved[date][normalUser] > 0 {
-							userReserved[date][normalUser]--
-						}
+						userReserved[date][normalUser]--
 					}
 					continue
 				}
 
-				// Find the first slot free across ALL dates
-				slotIdx := 0
-				for {
+				// Find the first slot free across ALL dates, within max unit count.
+				// A slot reserved by the same user counts as free (shared occupancy).
+				slotIdx := -1
+				for candidate := 0; maxSlots == 0 || candidate < maxSlots; candidate++ {
 					free := true
 					for _, date := range dates {
-						if reservedSlots[date][slotIdx] || consumedSlots[date][slotIdx] {
+						if consumedSlots[date][candidate] {
+							free = false
+							break
+						}
+						if reservedSlots[date][candidate] && reservedSlotUser[date][candidate] != normalUser {
 							free = false
 							break
 						}
 					}
 					if free {
+						slotIdx = candidate
 						break
 					}
-					slotIdx++
+				}
+				if slotIdx < 0 {
+					slog.Warn("kueue sync: no free slot within resource limit, skipping",
+						"resource", u.Resource, "user", u.User, "maxSlots", maxSlots)
+					continue
 				}
 
 				for _, date := range dates {
