@@ -279,9 +279,8 @@ func applyUserReservation(res userReservation) error {
 	cfg := database.GetGPUConfig()
 	for _, spec := range cfg.Resources {
 		coveredResources = append(coveredResources, spec.Type)
-		count := res.Resources[spec.Type]
 		quotaResources = append(quotaResources, map[string]any{
-			"name": spec.Type, "nominalQuota": strconv.Itoa(count),
+			"name": spec.Type, "nominalQuota": "0",
 		})
 	}
 

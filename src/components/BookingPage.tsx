@@ -25,6 +25,7 @@ import {
 import {
   Booking,
   todayStr,
+  getUtcOffsetHours,
 } from '../utils/constants';
 import { useBookings, useConfig, useClock, usePreemptedWorkloads } from '../utils/hooks';
 import ResourceSelector from './ResourceSelector';
@@ -112,7 +113,7 @@ const BookingPage: React.FC = () => {
     setReservingKey(key);
     setError(null);
     try {
-      await apiCreateBooking({ resource, slotIndex, date, slotType });
+      await apiCreateBooking({ resource, slotIndex, date, slotType, startHour: 0, endHour: 24, utcOffset: Math.round(getUtcOffsetHours(date)) });
       await fetchBookings();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to reserve');
