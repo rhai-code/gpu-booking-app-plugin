@@ -320,6 +320,43 @@ func TestSyncBookings_EmailUserPartialCoverage(t *testing.T) {
 	}
 }
 
+func TestSyncBookings_MultiNamespaceSameUser(t *testing.T) {
+	setupTestDB(t)
+	dates := []string{"2026-06-01"}
+
+	// alice@example.com reserves 2 slots (via OpenShift UI)
+	insertBooking(t, "res-1", "alice@example.com", "nvidia.com/gpu", 0, "2026-06-01", 0, 24, 0)
+	insertBooking(t, "res-2", "alice@example.com", "nvidia.com/gpu", 1, "2026-06-01", 0, 24, 0)
+
+	// Kueue reports 2 consumed in ns-a + 4 consumed in ns-b, both owned by "alice"
+	usages := []resourceUsage{
+		{Namespace: "ns-a", User: "alice", Resource: "nvidia.com/gpu", Count: 2},
+		{Namespace: "ns-b", User: "alice", Resource: "nvidia.com/gpu", Count: 4},
+	}
+	if err := syncBookings(usages, dates); err != nil {
+		t.Fatalf("syncBookings: %v", err)
+	}
+
+	reserved := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceReserved)
+	if reserved != 2 {
+		t.Errorf("reserved count = %d, want 2", reserved)
+	}
+
+	// 6 total consumed - 2 covered by reservations = 4 consumed bookings
+	consumed := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	if consumed != 4 {
+		t.Errorf("consumed count = %d, want 4", consumed)
+	}
+
+	// Consumed slots must not overlap with reserved slots 0 and 1
+	slots := getBookingSlots(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	for _, s := range slots {
+		if s == 0 || s == 1 {
+			t.Errorf("consumed slot %d overlaps with reserved slot", s)
+		}
+	}
+}
+
 func TestNormalizeUser(t *testing.T) {
 	tests := []struct {
 		input, want string

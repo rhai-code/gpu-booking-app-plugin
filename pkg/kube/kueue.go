@@ -447,7 +447,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 				}
 
 				// Find the first slot free across ALL dates, within max unit count.
-				// A slot reserved by the same user counts as free (shared occupancy).
+				// Skip any slot already occupied by a consumed or reserved booking.
 				slotIdx := -1
 				for candidate := 0; maxSlots == 0 || candidate < maxSlots; candidate++ {
 					free := true
@@ -456,7 +456,7 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 							free = false
 							break
 						}
-						if reservedSlots[date][candidate] && reservedSlotUser[date][candidate] != normalUser {
+						if reservedSlots[date][candidate] {
 							free = false
 							break
 						}
