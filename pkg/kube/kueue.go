@@ -428,18 +428,18 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 		}
 
 		for _, u := range group.usages {
-			// Subtract reserved slots from consumed count (reservations already account for those units)
 			for i := 0; i < u.Count; i++ {
-				// Check if this unit is covered by a reservation on ALL dates
 				normalUser := normalizeUser(u.User)
-				coveredByReservation := true
+
+				// Fast path: if reservations cover this unit on ALL dates, no consumed booking needed
+				fullyCovered := true
 				for _, date := range dates {
 					if userReserved[date][normalUser] <= 0 {
-						coveredByReservation = false
+						fullyCovered = false
 						break
 					}
 				}
-				if coveredByReservation {
+				if fullyCovered {
 					for _, date := range dates {
 						userReserved[date][normalUser]--
 					}
@@ -472,8 +472,14 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 					continue
 				}
 
+				// Create consumed bookings per date, but skip dates where the
+				// user's reservation already accounts for this unit.
 				for _, date := range dates {
 					consumedSlots[date][slotIdx] = true
+					if userReserved[date][normalUser] > 0 {
+						userReserved[date][normalUser]--
+						continue
+					}
 					id := kueueBookingID(u.Namespace, u.Resource, slotIdx, date)
 					desired[id] = bookingKey{
 						resource:  u.Resource,

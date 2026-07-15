@@ -320,6 +320,38 @@ func TestSyncBookings_EmailUserPartialCoverage(t *testing.T) {
 	}
 }
 
+func TestSyncBookings_ReservationPartialDateCoverage(t *testing.T) {
+	setupTestDB(t)
+	dates := []string{"2026-06-01", "2026-06-02", "2026-06-03"}
+
+	// alice reserves 1 slot for day 1 only
+	insertBooking(t, "res-1", "alice", "nvidia.com/gpu", 0, "2026-06-01", 0, 24, 0)
+
+	// Kueue reports 1 consumed unit spanning all 3 days
+	usages := []resourceUsage{
+		{Namespace: "user-alice", User: "alice", Resource: "nvidia.com/gpu", Count: 1},
+	}
+	if err := syncBookings(usages, dates); err != nil {
+		t.Fatalf("syncBookings: %v", err)
+	}
+
+	// Day 1: reservation covers the consumed unit — no consumed booking
+	consumed1 := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	if consumed1 != 0 {
+		t.Errorf("day 1 consumed = %d, want 0 (reservation covers it)", consumed1)
+	}
+
+	// Day 2+3: no reservation — consumed booking should exist
+	consumed2 := countBookings(t, "nvidia.com/gpu", "2026-06-02", database.SourceConsumed)
+	if consumed2 != 1 {
+		t.Errorf("day 2 consumed = %d, want 1", consumed2)
+	}
+	consumed3 := countBookings(t, "nvidia.com/gpu", "2026-06-03", database.SourceConsumed)
+	if consumed3 != 1 {
+		t.Errorf("day 3 consumed = %d, want 1", consumed3)
+	}
+}
+
 func TestSyncBookings_MultiNamespaceSameUser(t *testing.T) {
 	setupTestDB(t)
 	dates := []string{"2026-06-01"}
