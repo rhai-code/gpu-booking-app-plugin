@@ -3,6 +3,7 @@ package kube
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/eformat/gpu-booking-plugin/pkg/database"
 )
@@ -234,7 +235,8 @@ func TestSyncBookings_Idempotent(t *testing.T) {
 
 func TestSyncBookings_StaleBookingsRemoved(t *testing.T) {
 	setupTestDB(t)
-	dates := []string{"2026-06-01"}
+	futureDate := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
+	dates := []string{futureDate}
 
 	// First sync: alice has a workload
 	usages := []resourceUsage{
@@ -243,7 +245,7 @@ func TestSyncBookings_StaleBookingsRemoved(t *testing.T) {
 	if err := syncBookings(usages, dates); err != nil {
 		t.Fatalf("syncBookings first: %v", err)
 	}
-	if c := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed); c != 1 {
+	if c := countBookings(t, "nvidia.com/gpu", futureDate, database.SourceConsumed); c != 1 {
 		t.Fatalf("consumed after first sync = %d, want 1", c)
 	}
 
@@ -252,7 +254,7 @@ func TestSyncBookings_StaleBookingsRemoved(t *testing.T) {
 		t.Fatalf("syncBookings second: %v", err)
 	}
 
-	consumed := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	consumed := countBookings(t, "nvidia.com/gpu", futureDate, database.SourceConsumed)
 	if consumed != 0 {
 		t.Errorf("consumed count = %d after workload removed, want 0", consumed)
 	}
