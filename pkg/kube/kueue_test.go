@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/eformat/gpu-booking-plugin/pkg/database"
@@ -349,6 +350,41 @@ func TestSyncBookings_ReservationPartialDateCoverage(t *testing.T) {
 	consumed3 := countBookings(t, "nvidia.com/gpu", "2026-06-03", database.SourceConsumed)
 	if consumed3 != 1 {
 		t.Errorf("day 3 consumed = %d, want 1", consumed3)
+	}
+}
+
+func TestSyncBookings_ReservationPartialDatesWithOverflow(t *testing.T) {
+	setupTestDB(t)
+	dates := []string{"2026-06-01", "2026-06-02", "2026-06-03"}
+
+	// alice reserves 4 slots on day 1 and 2 only (not day 3)
+	for i := 0; i < 4; i++ {
+		insertBooking(t, fmt.Sprintf("res-d1-%d", i), "alice", "nvidia.com/gpu", i, "2026-06-01", 0, 24, 0)
+		insertBooking(t, fmt.Sprintf("res-d2-%d", i), "alice", "nvidia.com/gpu", i, "2026-06-02", 0, 24, 0)
+	}
+
+	// 6 consumed with maxSlots=8: without per-date slot finding this would overflow
+	usages := []resourceUsage{
+		{Namespace: "user-alice", User: "alice", Resource: "nvidia.com/gpu", Count: 6},
+	}
+	if err := syncBookings(usages, dates); err != nil {
+		t.Fatalf("syncBookings: %v", err)
+	}
+
+	// Day 1: 4 reserved cover 4 consumed, 2 extra consumed at non-reserved slots
+	reserved1 := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceReserved)
+	consumed1 := countBookings(t, "nvidia.com/gpu", "2026-06-01", database.SourceConsumed)
+	if reserved1 != 4 {
+		t.Errorf("day 1 reserved = %d, want 4", reserved1)
+	}
+	if consumed1 != 2 {
+		t.Errorf("day 1 consumed = %d, want 2", consumed1)
+	}
+
+	// Day 3: no reservations, all 6 consumed
+	consumed3 := countBookings(t, "nvidia.com/gpu", "2026-06-03", database.SourceConsumed)
+	if consumed3 != 6 {
+		t.Errorf("day 3 consumed = %d, want 6", consumed3)
 	}
 }
 

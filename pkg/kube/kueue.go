@@ -431,23 +431,27 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 			for i := 0; i < u.Count; i++ {
 				normalUser := normalizeUser(u.User)
 
-				// Fast path: if reservations cover this unit on ALL dates, no consumed booking needed
-				fullyCovered := true
+				// Determine which dates are covered vs uncovered by reservations.
+				var coveredDates, uncoveredDates []string
 				for _, date := range dates {
-					if userReserved[date][normalUser] <= 0 {
-						fullyCovered = false
-						break
+					if userReserved[date][normalUser] > 0 {
+						coveredDates = append(coveredDates, date)
+					} else {
+						uncoveredDates = append(uncoveredDates, date)
 					}
 				}
-				if fullyCovered {
-					for _, date := range dates {
+
+				// Fully covered: reservation accounts for this unit on every date
+				if len(uncoveredDates) == 0 {
+					for _, date := range coveredDates {
 						userReserved[date][normalUser]--
 					}
 					continue
 				}
 
-				// Find the first slot free across ALL dates, within max unit count.
-				// Skip any slot already occupied by a consumed or reserved booking.
+				// Find a slot that is not already consumed on any date and not
+				// reserved on the uncovered dates (where the consumed booking
+				// will actually be written).
 				slotIdx := -1
 				for candidate := 0; maxSlots == 0 || candidate < maxSlots; candidate++ {
 					free := true
@@ -456,6 +460,11 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 							free = false
 							break
 						}
+					}
+					if !free {
+						continue
+					}
+					for _, date := range uncoveredDates {
 						if reservedSlots[date][candidate] {
 							free = false
 							break
@@ -472,14 +481,16 @@ func syncBookings(usages []resourceUsage, dates []string) error {
 					continue
 				}
 
-				// Create consumed bookings per date, but skip dates where the
-				// user's reservation already accounts for this unit.
+				// Decrement reservation credits on covered dates
+				for _, date := range coveredDates {
+					userReserved[date][normalUser]--
+				}
+
+				// Mark slot occupied on all dates, create bookings only on uncovered dates
 				for _, date := range dates {
 					consumedSlots[date][slotIdx] = true
-					if userReserved[date][normalUser] > 0 {
-						userReserved[date][normalUser]--
-						continue
-					}
+				}
+				for _, date := range uncoveredDates {
 					id := kueueBookingID(u.Namespace, u.Resource, slotIdx, date)
 					desired[id] = bookingKey{
 						resource:  u.Resource,
